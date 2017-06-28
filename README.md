@@ -70,8 +70,7 @@ instrument a SIGIO signal is sent to the owning process when the
 instrument asserts a service request.
 
 Example
-
-...C
+```C
   signal(SIGIO, &srq_handler); /* dummy sample; sigaction( ) is better */
   fcntl(fd, F_SETOWN, getpid( ));
   oflags = fcntl(fd, F_GETFL);
@@ -79,7 +78,7 @@ Example
 	  perror("fcntl to set fasync failed\n");
 	  exit(1);
   }
-...
+```
 
 ### Support for receiving USBTMC USB488 SRQ notifications via poll/select
 
@@ -94,7 +93,7 @@ condition a READ_STATUS_BYTE ioctl must be performed.
 
 Example
 
-...C
+```C
   FD_SET(fd,&fdsel[0]);
   n = select(fd+1,
 	  (fd_set *)(&fdsel[0]),
@@ -112,7 +111,7 @@ Example
 	      */
 	  }
   }
-...
+```
 
 
 ### New ioctls to enable and disable local controls on an instrument
