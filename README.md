@@ -17,10 +17,14 @@ Installation
 
 Prerequisite: You need a prebuilt kernel with the configuration and
 kernel header files that were used to build it. Most distros have a
-"kernel headers" package for this.
+"kernel headers" package for this
+
+To obtain the files either clone the repo with
+`git clone https://github.com/dpenkler/linux-usbtmc.git linux-usbtmc`
+or download the zip file and extract the zip file to a directory linux-usbtmc
 
 To build the driver simply run "make" in the directory containing the
-driver source code.
+driver source code (linux-usbtmc/ or linux-usbtmc-master/).
 
 To install the driver run "make modules_install" as root.
 
@@ -30,6 +34,7 @@ To compile your instrument control program ensure that it includes the
 tmc.h file from this repo. An example test program for an
 Agilent/Keysight scope is also provided. See the file ttmc.c
 
+To clean the directory of build files run "make clean"
 
 Features
 --------
@@ -47,7 +52,7 @@ Implementers Forum, Inc.
 
 ## Individual feature descriptions
 
-### ioctl to support the USMTMC-USB488 READ_STATUS_BYTE operation.
+### ioctl to support the USBTMC-USB488 READ_STATUS_BYTE operation.
 
 
 When performing a read on an instrument that is executing
@@ -61,7 +66,7 @@ Note: The READ_STATUS_BYTE ioctl clears the SRQ condition but it has no effect
 on the status byte of the device.
 
 
-### Support for receiving USBTMC USB488 SRQ notifications with fasync
+### Support for receiving USBTMC-USB488 SRQ notifications with fasync
 
 By configuring an instrument's service request enable register various
 conditions can be reported via an SRQ notification.  When the FASYNC
@@ -80,7 +85,7 @@ Example
   }
 ```
 
-### Support for receiving USBTMC USB488 SRQ notifications via poll/select
+### Support for receiving USBTMC-USB488 SRQ notifications via poll/select
 
 In many situations operations on multiple instruments need to be
 synchronized. poll/select provide a convenient way of waiting on a

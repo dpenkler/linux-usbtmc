@@ -12,5 +12,6 @@ install:
 
 clean:
 	$(MAKE) -C $(KDIR) M=$$PWD clean
+	rm -f ttmc
 
 endif
