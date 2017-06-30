@@ -32,6 +32,7 @@
 #include <linux/usb.h>
 #include <linux/usb/tmc.h>
 
+#define USBTMC_VERSION "1.0"
 
 #define RIGOL			1
 #define USBTMC_HEADER_SIZE	12
@@ -45,6 +46,14 @@
 
 /* Default USB timeout (in milliseconds) */
 #define USBTMC_TIMEOUT		5000
+
+static unsigned int io_buffer_size = USBTMC_SIZE_IOBUFFER;
+module_param(io_buffer_size, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(io_buffer_size, "Size of bulk IO buffer in bytes");
+
+static unsigned int usb_timeout = USBTMC_TIMEOUT;
+module_param(usb_timeout, uint,  S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(usb_timeout, "USB timeout in milliseconds");
 
 /*
  * Maximum number of read cycles to empty bulk in endpoint during CLEAR and
@@ -185,7 +194,7 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 	int max_size;
 
 	dev = &data->intf->dev;
-	buffer = kmalloc(USBTMC_SIZE_IOBUFFER, GFP_KERNEL);
+	buffer = kmalloc(io_buffer_size, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -194,7 +203,7 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 			     USBTMC_REQUEST_INITIATE_ABORT_BULK_IN,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     data->bTag_last_read, data->bulk_in,
-			     buffer, 2, USBTMC_TIMEOUT);
+			     buffer, 2, usb_timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -238,8 +247,8 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 		rv = usb_bulk_msg(data->usb_dev,
 				  usb_rcvbulkpipe(data->usb_dev,
 						  data->bulk_in),
-				  buffer, USBTMC_SIZE_IOBUFFER,
-				  &actual, USBTMC_TIMEOUT);
+				  buffer, io_buffer_size,
+				  &actual, usb_timeout);
 
 		n++;
 
@@ -265,7 +274,7 @@ usbtmc_abort_bulk_in_status:
 			     USBTMC_REQUEST_CHECK_ABORT_BULK_IN_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     0, data->bulk_in, buffer, 0x08,
-			     USBTMC_TIMEOUT);
+			     usb_timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -292,8 +301,8 @@ usbtmc_abort_bulk_in_status:
 			rv = usb_bulk_msg(data->usb_dev,
 					  usb_rcvbulkpipe(data->usb_dev,
 							  data->bulk_in),
-					  buffer, USBTMC_SIZE_IOBUFFER,
-					  &actual, USBTMC_TIMEOUT);
+					  buffer, io_buffer_size,
+					  &actual, usb_timeout);
 
 			n++;
 
@@ -337,7 +346,7 @@ static int usbtmc_ioctl_abort_bulk_out(struct usbtmc_device_data *data)
 			     USBTMC_REQUEST_INITIATE_ABORT_BULK_OUT,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     data->bTag_last_write, data->bulk_out,
-			     buffer, 2, USBTMC_TIMEOUT);
+			     buffer, 2, usb_timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -361,7 +370,7 @@ usbtmc_abort_bulk_out_check_status:
 			     USBTMC_REQUEST_CHECK_ABORT_BULK_OUT_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     0, data->bulk_out, buffer, 0x08,
-			     USBTMC_TIMEOUT);
+			     usb_timeout);
 	n++;
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -422,7 +431,7 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_device_data *data,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			data->iin_bTag,
 			data->ifnum,
-			buffer, 0x03, USBTMC_TIMEOUT);
+			buffer, 0x03, usb_timeout);
 	if (rv < 0) {
 		dev_err(dev, "stb usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -438,7 +447,7 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_device_data *data,
 		rv = wait_event_interruptible_timeout(
 			data->waitq,
 			atomic_read(&data->iin_data_valid) != 0,
-			USBTMC_TIMEOUT);
+			usb_timeout);
 		if (rv < 0) {
 			dev_dbg(dev, "wait interrupted %d\n", rv);
 			goto exit;
@@ -509,7 +518,7 @@ static int usbtmc488_ioctl_simple(struct usbtmc_device_data *data,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			wValue,
 			data->ifnum,
-			buffer, 0x01, USBTMC_TIMEOUT);
+			buffer, 0x01, usb_timeout);
 	if (rv < 0) {
 		dev_err(dev, "simple usb_control_msg failed %d\n", rv);
 		goto exit;
@@ -554,7 +563,7 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 	retval = usb_bulk_msg(data->usb_dev,
 			      usb_sndbulkpipe(data->usb_dev,
 					      data->bulk_out),
-			      buffer, USBTMC_HEADER_SIZE, &actual, USBTMC_TIMEOUT);
+			      buffer, USBTMC_HEADER_SIZE, &actual, usb_timeout);
 
 	/* Store bTag (in case we need to abort) */
 	data->bTag_last_write = data->bTag;
@@ -612,7 +621,7 @@ static int send_request_dev_dep_msg_in(struct usbtmc_device_data *data, size_t t
 	retval = usb_bulk_msg(data->usb_dev,
 			      usb_sndbulkpipe(data->usb_dev,
 					      data->bulk_out),
-			      buffer, USBTMC_HEADER_SIZE, &actual, USBTMC_TIMEOUT);
+			      buffer, USBTMC_HEADER_SIZE, &actual, usb_timeout);
 
 	/* Store bTag (in case we need to abort) */
 	data->bTag_last_write = data->bTag;
@@ -648,7 +657,7 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 	data = filp->private_data;
 	dev = &data->intf->dev;
 
-	buffer = kmalloc(USBTMC_SIZE_IOBUFFER, GFP_KERNEL);
+	buffer = kmalloc(io_buffer_size, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -679,8 +688,8 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 		if (!data->rigol_quirk) {
 			dev_dbg(dev, "usb_bulk_msg_in: remaining(%zu), count(%zu)\n", remaining, count);
 
-			if (remaining > USBTMC_SIZE_IOBUFFER - USBTMC_HEADER_SIZE - 3)
-				this_part = USBTMC_SIZE_IOBUFFER - USBTMC_HEADER_SIZE - 3;
+			if (remaining > io_buffer_size - USBTMC_HEADER_SIZE - 3)
+				this_part = io_buffer_size - USBTMC_HEADER_SIZE - 3;
 			else
 				this_part = remaining;
 
@@ -697,8 +706,8 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 		retval = usb_bulk_msg(data->usb_dev,
 				      usb_rcvbulkpipe(data->usb_dev,
 						      data->bulk_in),
-				      buffer, USBTMC_SIZE_IOBUFFER, &actual,
-				      USBTMC_TIMEOUT);
+				      buffer, io_buffer_size, &actual,
+				      usb_timeout);
 
 		dev_dbg(dev, "usb_bulk_msg: retval(%u), done(%zu), remaining(%zu), actual(%d)\n", retval, done, remaining, actual);
 
@@ -829,7 +838,7 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 
 	data = filp->private_data;
 
-	buffer = kmalloc(USBTMC_SIZE_IOBUFFER, GFP_KERNEL);
+	buffer = kmalloc(io_buffer_size, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -843,8 +852,8 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 	done = 0;
 
 	while (remaining > 0) {
-		if (remaining > USBTMC_SIZE_IOBUFFER - USBTMC_HEADER_SIZE) {
-			this_part = USBTMC_SIZE_IOBUFFER - USBTMC_HEADER_SIZE;
+		if (remaining > io_buffer_size - USBTMC_HEADER_SIZE) {
+			this_part = io_buffer_size - USBTMC_HEADER_SIZE;
 			buffer[8] = 0;
 		} else {
 			this_part = remaining;
@@ -878,7 +887,7 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 					      usb_sndbulkpipe(data->usb_dev,
 							      data->bulk_out),
 					      buffer, n_bytes,
-					      &actual, USBTMC_TIMEOUT);
+					      &actual, usb_timeout);
 			if (retval != 0)
 				break;
 			n_bytes -= actual;
@@ -924,7 +933,7 @@ static int usbtmc_ioctl_clear(struct usbtmc_device_data *data)
 
 	dev_dbg(dev, "Sending INITIATE_CLEAR request\n");
 
-	buffer = kmalloc(USBTMC_SIZE_IOBUFFER, GFP_KERNEL);
+	buffer = kmalloc(io_buffer_size, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -932,7 +941,7 @@ static int usbtmc_ioctl_clear(struct usbtmc_device_data *data)
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_INITIATE_CLEAR,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 1, USBTMC_TIMEOUT);
+			     0, 0, buffer, 1, usb_timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -972,7 +981,7 @@ usbtmc_clear_check_status:
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_CHECK_CLEAR_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 2, USBTMC_TIMEOUT);
+			     0, 0, buffer, 2, usb_timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -996,8 +1005,8 @@ usbtmc_clear_check_status:
 			rv = usb_bulk_msg(data->usb_dev,
 					  usb_rcvbulkpipe(data->usb_dev,
 							  data->bulk_in),
-					  buffer, USBTMC_SIZE_IOBUFFER,
-					  &actual, USBTMC_TIMEOUT);
+					  buffer, io_buffer_size,
+					  &actual, usb_timeout);
 			n++;
 
 			if (rv < 0) {
@@ -1075,7 +1084,7 @@ static int get_capabilities(struct usbtmc_device_data *data)
 	rv = usb_control_msg(data->usb_dev, usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_GET_CAPABILITIES,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 0x18, USBTMC_TIMEOUT);
+			     0, 0, buffer, 0x18, usb_timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto err_out;
@@ -1214,7 +1223,7 @@ static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_INDICATOR_PULSE,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 0x01, USBTMC_TIMEOUT);
+			     0, 0, buffer, 0x01, usb_timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -1428,6 +1437,15 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 	dev_dbg(&intf->dev, "%s called\n", __func__);
 
+	pr_info("Experimental driver version %s loaded\n", USBTMC_VERSION);
+	if (io_buffer_size < 512)
+		io_buffer_size = 512;
+	io_buffer_size = io_buffer_size - (io_buffer_size % 4);
+	if (usb_timeout < 500)
+		usb_timeout = 500;
+	pr_info("Params: io_buffer_size = %d, usb_timeout = %d\n",
+		io_buffer_size, usb_timeout);
+
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
@@ -1583,6 +1601,8 @@ static void usbtmc_disconnect(struct usb_interface *intf)
 	mutex_unlock(&data->io_mutex);
 	usbtmc_free_int(data);
 	kref_put(&data->kref, usbtmc_delete);
+
+	pr_info("Experimental driver version %s unloaded", USBTMC_VERSION);
 }
 
 static int usbtmc_suspend(struct usb_interface *intf, pm_message_t message)

@@ -12,6 +12,7 @@
  ***************************************************************************/
 
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -47,9 +48,9 @@ static const char star[] = {' ','*'};
 
 static void show_caps(unsigned char caps) {
 	int i;
-	printf("Instrument capabilities: * prefix => supported capability\n");
+	printf("Instrument capabilities: * prefix => supported capability\n\n");
 	for (i=0;i<NUM_CAPS;i++)
-		printf("%c%s\n",star[((caps & cap_list[i].mask) != 0)],
+		printf("\t%c%s\n",star[((caps & cap_list[i].mask) != 0)],
 			cap_list[i].desc);
 }
 
@@ -63,16 +64,16 @@ typedef struct stat_entry {
    Service request enable register (SRE) Bit definitions
  */
 
-#define SRE_Tigger             1
+#define SRE_Trigger            1
 #define SRE_User               2
 #define SRE_Message            4
 #define SRE_MessageAvailable  16
 #define SRE_Event_Status      32
 #define SRE_Operation_Status 128
 
-/* need this define to inline bit definitions in SRE command strings */
+/* need these defines to inline bit definitions in SRE command strings */
+#define xstr(s) str(s)
 #define str(s) #s
-
 
 /*
    Status register bit definitions
@@ -97,9 +98,22 @@ const stat_entryT stb_bits[NUM_STAT_BITS] = {
 	{"OSR",  STB_OSR}
 };
 
+/* Helper routines */
+
+static double main_ts;
+double getTS() {
+	struct timeval tv;
+	double ts,tmp;
+	gettimeofday(&tv,NULL);
+	tmp = tv.tv_sec + (double)tv.tv_usec/1e6;
+	ts = tmp - main_ts;
+	main_ts = tmp;
+	return ts;
+}
+
 static void show_stb(unsigned char stb) {
 	int i;
-	printf("STB = ");
+	printf("%11.6f STB = ",getTS());
 	for (i=0;i<NUM_STAT_BITS;i++)
 		if (stb & stb_bits[i].mask) {
 			printf("%s ",stb_bits[i].desc);
@@ -114,8 +128,6 @@ void srq_handler(int sig) {
 }
 
 
-/* Helper routines */
-
 unsigned int get_stb() {
 	unsigned char stb;
 	if (0 != ioctl(fd,USBTMC488_IOCTL_READ_STB,&stb)) {
@@ -127,6 +139,13 @@ unsigned int get_stb() {
 /* Send string to scope */
 void sscope(char *msg) {
 	write(fd,msg,strlen(msg));
+//	printf("sscope: %s",msg);
+}
+
+void setSRE(int val) {
+	char buf[32];
+	snprintf(buf,32,"*SRE %d\n",val);
+	sscope(buf);
 }
 
 /* Read string from scope */
@@ -175,7 +194,7 @@ int main () {
 
   /* Read and print returned identity string */
   rscope(buf,MAX_BL);
-  printf(buf);
+  printf("*IDN? = %s\n\n",buf);
 
 
   /* Get and display instrument capabilities */
@@ -185,10 +204,16 @@ int main () {
   }
   show_caps(caps);
 
-test_stb:
+  getTS(); /* initialise time stamp */
+  // sscope("*RST\n");
+  sscope(":WGEN:FUNC SIN;OUTP 1;FREQ 1000;VOLT 0.5\n");
+  sscope(":RUN\n");
+  sscope(":AUTOSCALE\n");
+
+tstb:
 
   /* Test read STB ioctl */
-  printf("Testing stb ioctl\n");
+  printf("\n\nTesting stb ioctl\n\n\n");
 //  wait_for_user();
 
   tmp1 = get_stb();
@@ -198,34 +223,27 @@ test_stb:
   rscope(buf,MAX_BL);
   tmp = atoi(buf);
 
-  if (tmp != tmp1)
+  if (tmp != tmp1) {
 	  fprintf(stderr,
 		  "Warning: SCPI status byte = %x, ioctl status byte = %x\n",
 		  tmp,tmp1);
-
-  show_stb(tmp);
+	  show_stb(tmp);
+  }
   show_stb(tmp1);
 
+  sscope("*CLS\n");  /* Clear status */
+  sscope("*TST?\n"); /* Initiate long operation: self test */
 
-/* Set Message available mask and clear status */
-  sscope("*SRE " str(SRE_MessageAvailable) "\n");
-  sscope("*SRE?\n");
-  rscope(buf,MAX_BL);
-  printf("SRE = %s\n",buf);
-  sscope("*CLS\n");
-  show_stb(get_stb()); // clear srq
-  sscope("*TST?\n"); /* Initiate self test */
-
-  while (1) { /* spin on stb until mav bit is set */
+/* Poll  STB until MAV bit is set */
+  while (1) {
 	  tmp = get_stb();
 	  if (tmp & STB_MAV) { /* Test for MAV */
-		  printf("stb test success\n");
 		  show_stb(tmp);
 		  rscope(buf,MAX_BL);
-		  printf(buf);
+		  printf("stb test success. Scope returned %s\n",buf);
 		  break;
 	  }
-	  usleep(10000); // 10 ms
+	  usleep(10000); // wait 10 ms
   }
 
 tren:
@@ -238,7 +256,7 @@ tren:
 	  exit(1);
   }
   printf("Remote disabled\n");
-  sscope("SYSTEM:DSP \"USBTMC_488 driver Test\n\"");
+  sscope("SYSTEM:DSP \"USBTMC_488 driver Test\"");
   show_stb(get_stb()); // error ?
 
   printf("Testing Remote enable, press enter to continue\n");
@@ -265,15 +283,15 @@ tren:
   sscope("*CLS\n");
 
 tsel:
-  printf("\n\n\nTesting select\n\n\n");
-  memset(fdsel,0,sizeof(fdsel));
+  memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
+  printf("\n\nTesting select\n\n\n");
 /* Set Mav mask and clear status */
-  sscope("*SRE " str(SRE_MessageAvailable) "\n");
-  sscope("*SRE?\n");
-  rscope(buf,MAX_BL);
-  printf("SRE = %s\n",buf);
+  setSRE(SRE_MessageAvailable);
+  sscope("*CLS\n");
+  sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
   show_stb(get_stb()); // clear srq
-  sscope("*TST?\n");
+
+  /* wait here for MAV */
 
   FD_SET(fd,&fdsel[0]);
   n = select(fd+1,
@@ -287,14 +305,14 @@ tsel:
   }
 
   if (FD_ISSET(fd,&fdsel[0])) {
-	  printf("Select success\n");
 	  show_stb(get_stb(stb));
 	  rscope(buf,MAX_BL);
-	  printf("Test result is: %s\n",buf);
+	  printf("Measurement result is: %s\n",buf);
+	  printf("Select success\n");
   }
 
 async:
-  printf("Testing async\n");
+  printf("\n\nTesting fcntl FASYNC notification\n\n\n");
   sscope(":TRIG:SOURCE CHAN1\n");
   signal(SIGIO, &srq_handler); /* dummy sample; sigaction( ) is better */
   fcntl(fd, F_SETOWN, getpid( ));
@@ -305,55 +323,41 @@ async:
   }
   sscope(":WAV:POINTS MAX");
   sscope(":TIM:MODE MAIN\n");
-  sscope(":ACQ:COMP?;COUNT?;MODE?;POINTS?;SRAT?;TYPE?\n");
-  rscope(buf,MAX_BL);
-  printf(buf);
   sscope(":WAV:SOURCE CHAN1\n");
   /* enable OPC */
   sscope("*ESE 1\n"); // set operation complete in the event status enable reg
-  sscope("*SRE " str(SRE_Event_Status) "\n"); // enable srq on event status reg
-  sscope("*SRE?\n");
-  rscope(buf,MAX_BL);
-  printf("SRE = %s\n",buf);
-  sscope("*ESE?\n");
-  rscope(buf,MAX_BL);
-  printf("ESE = %s\n",buf);
-  sscope("*ESR?\n");
-  rscope(buf,MAX_BL);
-  printf("ESR = %s\n",buf);
-  sscope("*CLS\n");
+  setSRE(SRE_Event_Status); // enable srq on event status reg
   show_stb(get_stb()); // clear srq
-  printf("digitise , press enter to continue\n");
-  wait_for_user();
+  flag = 0;
   sscope(":DIG CHAN1\n");
   sscope("*OPC\n");
 
   if (sleep(5)) {
-	  printf("Fasync %s\n",flag?"succeeded":"failed");
 	  stb = get_stb();
 	  show_stb(stb);
-	  sscope(":WAV:PRE?\n");
+	  sscope(":WAV:POINTS?\n");
 	  rscope(buf,MAX_BL);
-	  printf(buf);
+	  printf("Points = %s\n",buf);
+	  printf("Fasync %s\n",flag?"succeeded":"failed");
   } else printf("Fail\n");
-  show_stb(get_stb());
 
 trigger:
-  printf("Testing trigger\n");
+  printf("\n\nTesting trigger ioctl\n\n\n");
   sscope(":TRIG:SOURCE EXT\n");
-  sscope("*SRE " str(SRE_Trigger) "\n"); // enable SRQ on trigger
   sscope("*CLS\n");   // clear all status
-  printf("press enter to continue\n");
-  wait_for_user();
+  setSRE(SRE_Trigger); // enable SRQ on trigger
+  sscope(":DIG CHAN1\n");
+  show_stb(get_stb());
 
   if (ioctl(fd,USBTMC488_IOCTL_TRIGGER)) {
 	  perror("trigger ioctl failed");
 	  exit(1);
   }
+
   wait_for_srq();
   stb = get_stb();
-  printf("trigger ioctl %s\n", (stb & STB_TRG) ? "success" : "failure");
   show_stb(stb);
+  printf("trigger ioctl %s\n", (stb & STB_TRG) ? "success" : "failure");
   printf("ttmc: /done\n");
   close(fd);
   exit(0);

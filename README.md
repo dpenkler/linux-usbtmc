@@ -1,5 +1,4 @@
-linux-usbtmc driver
--------------------
+#linux-usbtmc driver
 
 This is an experimental linux driver for usb test measurement &
 control instruments that adds support for missing functions in
@@ -12,8 +11,7 @@ the standard usbtmc driver in their kernel.
 Presently only the trigger ioctl is not available in the standard
 kernel.org releases >= 4.6.
 
-Installation
-------------
+##Installation
 
 Prerequisite: You need a prebuilt kernel with the configuration and
 kernel header files that were used to build it. Most distros have a
@@ -23,21 +21,21 @@ To obtain the files either clone the repo with
 `git clone https://github.com/dpenkler/linux-usbtmc.git linux-usbtmc`
 or download the zip file and extract the zip file to a directory linux-usbtmc
 
-To build the driver simply run "make" in the directory containing the
+To build the driver simply run `make` in the directory containing the
 driver source code (linux-usbtmc/ or linux-usbtmc-master/).
 
-To install the driver run "make modules_install" as root.
+To install the driver run `make modules_install` as root.
 
-To load the driver execute "rmmod usbtmc; modprobe usbtmc" as root.
+To load the driver execute `rmmod usbtmc; modprobe usbtmc` as root.
 
 To compile your instrument control program ensure that it includes the
 tmc.h file from this repo. An example test program for an
 Agilent/Keysight scope is also provided. See the file ttmc.c
+To build the provided program run `make ttmc`
 
-To clean the directory of build files run "make clean"
+To clean the directory of build files run `make clean`
 
-Features
---------
+##Features
 
 The new features supported by this driver are based on the
 specifications contained in the following document from the USB
@@ -50,7 +48,7 @@ Implementers Forum, Inc.
     Revision 1.0
     April 14, 2003
 
-## Individual feature descriptions
+Individual feature descriptions:
 
 ### ioctl to support the USBTMC-USB488 READ_STATUS_BYTE operation.
 
@@ -138,3 +136,21 @@ This is a convenience function to obtain an instrument's capabilities
 from its file descriptor without having to access sysfs from the user
 program. The driver encoded usb488 capability masks are defined in the
 tmc.h include file.
+
+### Two new module parameters
+
+***io_buffer_size*** specifies the size of the buffer in bytes that is
+used for usb bulk transfers. The default size is 2048. The minimum
+size is 512. Values given for this parameter are automatically rounded
+down to the nearest multiple of 4.
+
+***usb_timeout*** specifies the timeout in milliseconds that is used
+for usb transfers. The default value is 5000 and the minimum value is 500.
+
+To set the parameters `modprobe usbtmc [io_buffer_size=nnn] [usb_timeout=nnn]`
+For example to set the buffer size to 256KB:
+`modprobe usbtmc io_buffer_size=262144`
+
+## Issues and enhancement requests
+
+Use the Issue feature in github to post requests for enhancements or bugfixes.
