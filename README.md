@@ -26,7 +26,7 @@ driver source code (linux-usbtmc/ or linux-usbtmc-master/).
 
 To install the driver run `make modules_install` as root.
 
-To load the driver execute `rmmod usbtmc; modprobe usbtmc` as root.
+To load the driver execute `rmmod usbtmc; insmod usbtmc.ko` as root.
 
 To compile your instrument control program ensure that it includes the
 tmc.h file from this repo. An example test program for an
@@ -147,10 +147,15 @@ down to the nearest multiple of 4.
 ***usb_timeout*** specifies the timeout in milliseconds that is used
 for usb transfers. The default value is 5000 and the minimum value is 500.
 
-To set the parameters `modprobe usbtmc [io_buffer_size=nnn] [usb_timeout=nnn]`
+To set the parameters
+```
+insmod usbtmc.ko [io_buffer_size=nnn] [usb_timeout=nnn]
+````
 For example to set the buffer size to 256KB:
-`modprobe usbtmc io_buffer_size=262144`
+```
+insmod usbtmc.ko io_buffer_size=262144
+```
 
 ## Issues and enhancement requests
 
-Use the Issue feature in github to post requests for enhancements or bugfixes.
+Use the [Issue](https://github.com/dpenkler/linux-usbtmc/issues) feature in github to post requests for enhancements or bugfixes.
