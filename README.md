@@ -1,4 +1,4 @@
-#linux-usbtmc driver
+# linux-usbtmc driver
 
 This is an experimental linux driver for usb test measurement &
 control instruments that adds support for missing functions in
@@ -11,7 +11,7 @@ the standard usbtmc driver in their kernel.
 Presently only the trigger ioctl is not available in the standard
 kernel.org releases >= 4.6.
 
-##Installation
+## Installation
 
 Prerequisite: You need a prebuilt kernel with the configuration and
 kernel header files that were used to build it. Most distros have a
@@ -35,7 +35,7 @@ To build the provided program run `make ttmc`
 
 To clean the directory of build files run `make clean`
 
-##Features
+## Features
 
 The new features supported by this driver are based on the
 specifications contained in the following document from the USB
