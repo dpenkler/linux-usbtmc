@@ -8,8 +8,8 @@ the linux kernel starting with version 4.6.  This package is provided
 for folks wanting to test or use driver features not yet supported by
 the standard usbtmc driver in their kernel.
 
-Presently only the trigger ioctl is not available in the standard
-kernel.org releases >= 4.6.
+Presently only the trigger ioctl and the module params are not
+available in the standard kernel.org releases >= 4.6.
 
 ## Installation
 
