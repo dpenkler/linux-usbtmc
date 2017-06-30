@@ -24,7 +24,7 @@ or download the zip file and extract the zip file to a directory linux-usbtmc
 To build the driver simply run `make` in the directory containing the
 driver source code (linux-usbtmc/ or linux-usbtmc-master/).
 
-To install the driver run `make modules_install` as root.
+To install the driver run `make install` as root.
 
 To load the driver execute `rmmod usbtmc; insmod usbtmc.ko` as root.
 
