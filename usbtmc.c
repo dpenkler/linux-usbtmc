@@ -30,7 +30,7 @@
 #include <linux/poll.h>
 #include <linux/mutex.h>
 #include <linux/usb.h>
-#include <linux/usb/tmc.h>
+#include "tmc.h"
 
 #define USBTMC_VERSION "1.0"
 
