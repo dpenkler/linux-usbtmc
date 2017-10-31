@@ -44,6 +44,8 @@
  */
 #define USBTMC_SIZE_IOBUFFER	2048
 
+/* Minimum USB timeout (in milliseconds) */
+#define USBTMC_MIN_TIMEOUT	500
 /* Default USB timeout (in milliseconds) */
 #define USBTMC_TIMEOUT		5000
 
@@ -579,6 +581,30 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 			"usb_bulk_msg in usbtmc488_ioctl_trigger() returned %d\n", retval);
 		return retval;
 	}
+
+	return 0;
+}
+
+/*
+ * Sets the usb timeout value and returns the previous value
+ *
+ */
+static int usbtmc488_ioctl_timeout(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u32 timeout, old_timeout;
+
+	if (copy_from_user(&timeout, arg, sizeof(timeout)))
+		return -EFAULT;
+
+	if (timeout < USBTMC_MIN_TIMEOUT)
+		return -EINVAL;
+
+	old_timeout = usb_timeout;
+	usb_timeout = timeout;
+
+	if (copy_to_user(arg, &old_timeout, sizeof(old_timeout)))
+		return -EFAULT;
 
 	return 0;
 }
@@ -1311,6 +1337,10 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case USBTMC488_IOCTL_TRIGGER:
 		retval = usbtmc488_ioctl_trigger(data);
 		break;
+
+	case USBTMC488_IOCTL_TIMEOUT:
+		retval = usbtmc488_ioctl_timeout(data, (void __user *)arg);
+		break;
 	}
 
 skip_io_on_zombie:
@@ -1441,8 +1471,8 @@ static int usbtmc_probe(struct usb_interface *intf,
 	if (io_buffer_size < 512)
 		io_buffer_size = 512;
 	io_buffer_size = io_buffer_size - (io_buffer_size % 4);
-	if (usb_timeout < 500)
-		usb_timeout = 500;
+	if (usb_timeout < USBTMC_MIN_TIMEOUT)
+		usb_timeout = USBTMC_MIN_TIMEOUT;
 	pr_info("Params: io_buffer_size = %d, usb_timeout = %d\n",
 		io_buffer_size, usb_timeout);
 

@@ -156,6 +156,12 @@ For example to set the buffer size to 256KB:
 insmod usbtmc.ko io_buffer_size=262144
 ```
 
+### ioctl to set/get the usb timeout value
+
+This ioctl sets the new value and returns the old value in the ioctl
+argument. The ioclt argument is overwritten with the old value.
+
+
 ## Issues and enhancement requests
 
 Use the [Issue](https://github.com/dpenkler/linux-usbtmc/issues) feature in github to post requests for enhancements or bugfixes.
