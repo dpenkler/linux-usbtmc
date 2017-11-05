@@ -32,7 +32,7 @@
 #include <linux/usb.h>
 #include "tmc.h"
 
-#define USBTMC_VERSION "1.0"
+#define USBTMC_VERSION "1.1"
 
 #define RIGOL			1
 #define USBTMC_HEADER_SIZE	12
@@ -536,6 +536,60 @@ static int usbtmc488_ioctl_simple(struct usbtmc_device_data *data,
 		goto exit;
 	}
 	rv = 0;
+
+ exit:
+	kfree(buffer);
+	return rv;
+}
+
+static int usbtmc488_ioctl_request(struct usbtmc_device_data *data, void __user *arg)
+{
+	struct device *dev = &data->intf->dev;
+	struct usbtmc_ctrlrequest request;
+	u8 *buffer = NULL;
+	int rv;
+	unsigned long res;
+
+	res = copy_from_user(&request, arg, sizeof(struct usbtmc_ctrlrequest));
+	if (res) {
+		return -EFAULT;
+	}
+
+	buffer = kmalloc(request.req.wLength, GFP_KERNEL); // TODO: if wLength == 0
+	if (!buffer)
+		return -ENOMEM;
+
+	if ((request.req.bRequestType & USB_DIR_IN) == 0) {
+		res = copy_from_user(buffer, request.data, request.req.wLength);
+		if (res) {
+			rv = -EFAULT;
+			goto exit;
+		}
+	}
+
+	rv = usb_control_msg(data->usb_dev,
+			usb_rcvctrlpipe(data->usb_dev, 0),
+			request.req.bRequest,
+			request.req.bRequestType,
+			request.req.wValue,
+			request.req.wIndex,
+			buffer, request.req.wLength, usb_timeout);
+
+	if (rv < 0) {
+		dev_err(dev, "generic usb_control_msg failed %d\n", rv);
+		goto exit;
+	} 
+	if ((request.req.bRequestType & USB_DIR_IN)) {
+		if (rv > request.req.wLength ) {
+			dev_warn(dev, "generic usb_control_msg returned too much data: %d\n", rv);
+			rv = request.req.wLength;
+		}
+
+		res = copy_to_user(request.data, buffer, rv );
+		if (res) {
+			rv = -EFAULT;
+		}
+	}
 
  exit:
 	kfree(buffer);
@@ -1305,6 +1359,10 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case USBTMC_IOCTL_ABORT_BULK_IN:
 		retval = usbtmc_ioctl_abort_bulk_in(data);
+		break;
+
+	case USBTMC_IOCTL_CTRL_REQUEST:
+		retval = usbtmc488_ioctl_request(data, (void __user *)arg);
 		break;
 
 	case USBTMC488_IOCTL_GET_CAPS:
