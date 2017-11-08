@@ -640,13 +640,28 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 }
 
 /*
- * Sets the usb timeout value and returns the previous value
- *
+ * Gets the usb timeout value
  */
-static int usbtmc488_ioctl_timeout(struct usbtmc_device_data *data,
+static int usbtmc488_ioctl_get_timeout(struct usbtmc_device_data *data,
 				void __user *arg)
 {
-	__u32 timeout, old_timeout;
+	__u32 timeout;
+
+	timeout = usb_timeout;
+
+        if (copy_to_user(arg, &timeout, sizeof(timeout)))
+                return -EFAULT;
+
+	return 0;
+}
+
+/*
+ * Sets the usb timeout value
+ */
+static int usbtmc488_ioctl_set_timeout(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u32 timeout;
 
 	if (copy_from_user(&timeout, arg, sizeof(timeout)))
 		return -EFAULT;
@@ -654,11 +669,7 @@ static int usbtmc488_ioctl_timeout(struct usbtmc_device_data *data,
 	if (timeout < USBTMC_MIN_TIMEOUT)
 		return -EINVAL;
 
-	old_timeout = usb_timeout;
 	usb_timeout = timeout;
-
-	if (copy_to_user(arg, &old_timeout, sizeof(old_timeout)))
-		return -EFAULT;
 
 	return 0;
 }
@@ -1396,8 +1407,12 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		retval = usbtmc488_ioctl_trigger(data);
 		break;
 
-	case USBTMC488_IOCTL_TIMEOUT:
-		retval = usbtmc488_ioctl_timeout(data, (void __user *)arg);
+	case USBTMC488_IOCTL_GET_TIMEOUT:
+		retval = usbtmc488_ioctl_get_timeout(data, (void __user *)arg);
+		break;
+
+	case USBTMC488_IOCTL_SET_TIMEOUT:
+		retval = usbtmc488_ioctl_set_timeout(data, (void __user *)arg);
 		break;
 	}
 
