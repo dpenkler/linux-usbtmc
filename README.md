@@ -14,6 +14,7 @@ a kernel.org release:
  - module params
  - user get/set ioctls for usb timeout
  - ioctl to send generic usb control messages
+ 
 The remaining features are available in the standard kernel.org releases >= 4.6.
 
 ## Installation
