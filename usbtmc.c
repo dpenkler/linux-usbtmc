@@ -117,7 +117,8 @@ struct usbtmc_device_data {
 	__u8 usb488_caps;
 
 	u8 rigol_quirk;
-
+	/* request timeout */
+	u32 timeout;
 	/* attributes from the USB TMC spec for this device */
 	u8 TermChar;
 	bool TermCharEnabled;
@@ -205,7 +206,7 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 			     USBTMC_REQUEST_INITIATE_ABORT_BULK_IN,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     data->bTag_last_read, data->bulk_in,
-			     buffer, 2, usb_timeout);
+			     buffer, 2, data->timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -250,7 +251,7 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 				  usb_rcvbulkpipe(data->usb_dev,
 						  data->bulk_in),
 				  buffer, io_buffer_size,
-				  &actual, usb_timeout);
+				  &actual, data->timeout);
 
 		n++;
 
@@ -276,7 +277,7 @@ usbtmc_abort_bulk_in_status:
 			     USBTMC_REQUEST_CHECK_ABORT_BULK_IN_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     0, data->bulk_in, buffer, 0x08,
-			     usb_timeout);
+			     data->timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -304,7 +305,7 @@ usbtmc_abort_bulk_in_status:
 					  usb_rcvbulkpipe(data->usb_dev,
 							  data->bulk_in),
 					  buffer, io_buffer_size,
-					  &actual, usb_timeout);
+					  &actual, data->timeout);
 
 			n++;
 
@@ -348,7 +349,7 @@ static int usbtmc_ioctl_abort_bulk_out(struct usbtmc_device_data *data)
 			     USBTMC_REQUEST_INITIATE_ABORT_BULK_OUT,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     data->bTag_last_write, data->bulk_out,
-			     buffer, 2, usb_timeout);
+			     buffer, 2, data->timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -372,7 +373,7 @@ usbtmc_abort_bulk_out_check_status:
 			     USBTMC_REQUEST_CHECK_ABORT_BULK_OUT_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_ENDPOINT,
 			     0, data->bulk_out, buffer, 0x08,
-			     usb_timeout);
+			     data->timeout);
 	n++;
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -433,7 +434,7 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_device_data *data,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			data->iin_bTag,
 			data->ifnum,
-			buffer, 0x03, usb_timeout);
+			buffer, 0x03, data->timeout);
 	if (rv < 0) {
 		dev_err(dev, "stb usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -449,7 +450,7 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_device_data *data,
 		rv = wait_event_interruptible_timeout(
 			data->waitq,
 			atomic_read(&data->iin_data_valid) != 0,
-			usb_timeout);
+			data->timeout);
 		if (rv < 0) {
 			dev_dbg(dev, "wait interrupted %d\n", rv);
 			goto exit;
@@ -520,7 +521,7 @@ static int usbtmc488_ioctl_simple(struct usbtmc_device_data *data,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			wValue,
 			data->ifnum,
-			buffer, 0x01, usb_timeout);
+			buffer, 0x01, data->timeout);
 	if (rv < 0) {
 		dev_err(dev, "simple usb_control_msg failed %d\n", rv);
 		goto exit;
@@ -573,7 +574,7 @@ static int usbtmc488_ioctl_request(struct usbtmc_device_data *data, void __user 
 			request.req.bRequestType,
 			request.req.wValue,
 			request.req.wIndex,
-			buffer, request.req.wLength, usb_timeout);
+			buffer, request.req.wLength, data->timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "generic usb_control_msg failed %d\n", rv);
@@ -619,7 +620,7 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 	retval = usb_bulk_msg(data->usb_dev,
 			      usb_sndbulkpipe(data->usb_dev,
 					      data->bulk_out),
-			      buffer, USBTMC_HEADER_SIZE, &actual, usb_timeout);
+			      buffer, USBTMC_HEADER_SIZE, &actual, data->timeout);
 
 	/* Store bTag (in case we need to abort) */
 	data->bTag_last_write = data->bTag;
@@ -647,7 +648,7 @@ static int usbtmc488_ioctl_get_timeout(struct usbtmc_device_data *data,
 {
 	__u32 timeout;
 
-	timeout = usb_timeout;
+	timeout = data->timeout;
 
         if (copy_to_user(arg, &timeout, sizeof(timeout)))
                 return -EFAULT;
@@ -669,7 +670,7 @@ static int usbtmc488_ioctl_set_timeout(struct usbtmc_device_data *data,
 	if (timeout < USBTMC_MIN_TIMEOUT)
 		return -EINVAL;
 
-	usb_timeout = timeout;
+	data->timeout = timeout;
 
 	return 0;
 }
@@ -712,7 +713,7 @@ static int send_request_dev_dep_msg_in(struct usbtmc_device_data *data, size_t t
 	retval = usb_bulk_msg(data->usb_dev,
 			      usb_sndbulkpipe(data->usb_dev,
 					      data->bulk_out),
-			      buffer, USBTMC_HEADER_SIZE, &actual, usb_timeout);
+			      buffer, USBTMC_HEADER_SIZE, &actual, data->timeout);
 
 	/* Store bTag (in case we need to abort) */
 	data->bTag_last_write = data->bTag;
@@ -798,7 +799,7 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 				      usb_rcvbulkpipe(data->usb_dev,
 						      data->bulk_in),
 				      buffer, io_buffer_size, &actual,
-				      usb_timeout);
+				      data->timeout);
 
 		dev_dbg(dev, "usb_bulk_msg: retval(%u), done(%zu), remaining(%zu), actual(%d)\n", retval, done, remaining, actual);
 
@@ -978,7 +979,7 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 					      usb_sndbulkpipe(data->usb_dev,
 							      data->bulk_out),
 					      buffer, n_bytes,
-					      &actual, usb_timeout);
+					      &actual, data->timeout);
 			if (retval != 0)
 				break;
 			n_bytes -= actual;
@@ -1032,7 +1033,7 @@ static int usbtmc_ioctl_clear(struct usbtmc_device_data *data)
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_INITIATE_CLEAR,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 1, usb_timeout);
+			     0, 0, buffer, 1, data->timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -1072,7 +1073,7 @@ usbtmc_clear_check_status:
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_CHECK_CLEAR_STATUS,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 2, usb_timeout);
+			     0, 0, buffer, 2, data->timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto exit;
@@ -1097,7 +1098,7 @@ usbtmc_clear_check_status:
 					  usb_rcvbulkpipe(data->usb_dev,
 							  data->bulk_in),
 					  buffer, io_buffer_size,
-					  &actual, usb_timeout);
+					  &actual, data->timeout);
 			n++;
 
 			if (rv < 0) {
@@ -1175,7 +1176,7 @@ static int get_capabilities(struct usbtmc_device_data *data)
 	rv = usb_control_msg(data->usb_dev, usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_GET_CAPABILITIES,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 0x18, usb_timeout);
+			     0, 0, buffer, 0x18, data->timeout);
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
 		goto err_out;
@@ -1314,7 +1315,7 @@ static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 			     usb_rcvctrlpipe(data->usb_dev, 0),
 			     USBTMC_REQUEST_INDICATOR_PULSE,
 			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			     0, 0, buffer, 0x01, usb_timeout);
+			     0, 0, buffer, 0x01, data->timeout);
 
 	if (rv < 0) {
 		dev_err(dev, "usb_control_msg returned %d\n", rv);
@@ -1582,6 +1583,7 @@ static int usbtmc_probe(struct usb_interface *intf,
 	data->bTag	= 1;
 	data->TermCharEnabled = 0;
 	data->TermChar = '\n';
+	data->timeout  = usb_timeout;
 	/*  2 <= bTag <= 127   USBTMC-USB488 subclass specification 4.3.1 */
 	data->iin_bTag = 2;
 
