@@ -544,60 +544,6 @@ static int usbtmc488_ioctl_simple(struct usbtmc_device_data *data,
 	return rv;
 }
 
-static int usbtmc488_ioctl_request(struct usbtmc_device_data *data, void __user *arg)
-{
-	struct device *dev = &data->intf->dev;
-	struct usbtmc_ctrlrequest request;
-	u8 *buffer = NULL;
-	int rv;
-	unsigned long res;
-
-	res = copy_from_user(&request, arg, sizeof(struct usbtmc_ctrlrequest));
-	if (res) {
-		return -EFAULT;
-	}
-
-	buffer = kmalloc(request.req.wLength, GFP_KERNEL); // TODO: if wLength == 0
-	if (!buffer)
-		return -ENOMEM;
-
-	if ((request.req.bRequestType & USB_DIR_IN) == 0) {
-		res = copy_from_user(buffer, request.data, request.req.wLength);
-		if (res) {
-			rv = -EFAULT;
-			goto exit;
-		}
-	}
-
-	rv = usb_control_msg(data->usb_dev,
-			usb_rcvctrlpipe(data->usb_dev, 0),
-			request.req.bRequest,
-			request.req.bRequestType,
-			request.req.wValue,
-			request.req.wIndex,
-			buffer, request.req.wLength, data->timeout);
-
-	if (rv < 0) {
-		dev_err(dev, "generic usb_control_msg failed %d\n", rv);
-		goto exit;
-	}
-	if ((request.req.bRequestType & USB_DIR_IN)) {
-		if (rv > request.req.wLength ) {
-			dev_warn(dev, "generic usb_control_msg returned too much data: %d\n", rv);
-			rv = request.req.wLength;
-		}
-
-		res = copy_to_user(request.data, buffer, rv );
-		if (res) {
-			rv = -EFAULT;
-		}
-	}
-
- exit:
-	kfree(buffer);
-	return rv;
-}
-
 /*
  * Sends a TRIGGER Bulk-OUT command message
  * See the USBTMC-USB488 specification, Table 2.
@@ -641,81 +587,6 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 	return 0;
 }
 
-/*
- * Gets the usb timeout value
- */
-static int usbtmc488_ioctl_get_timeout(struct usbtmc_device_data *data,
-				void __user *arg)
-{
-	__u32 timeout;
-
-	timeout = data->timeout;
-
-        if (copy_to_user(arg, &timeout, sizeof(timeout)))
-                return -EFAULT;
-
-	return 0;
-}
-
-/*
- * Sets the usb timeout value
- */
-static int usbtmc488_ioctl_set_timeout(struct usbtmc_device_data *data,
-				void __user *arg)
-{
-	__u32 timeout;
-
-	if (copy_from_user(&timeout, arg, sizeof(timeout)))
-		return -EFAULT;
-
-	if (timeout < USBTMC_MIN_TIMEOUT)
-		return -EINVAL;
-
-	data->timeout = timeout;
-
-	return 0;
-}
-
-/*
- * enables/disables sending EOM on write
- */
-static int usbtmc488_ioctl_eom_enable(struct usbtmc_device_data *data,
-				void __user *arg)
-{
-	__u8 eom_enable;
-
-	if (copy_from_user(&eom_enable, arg, sizeof(eom_enable)))
-		return -EFAULT;
-
-	if (eom_enable > 1)
-		return -EINVAL;
-
-	data->eom_val = eom_enable;
-
-	return 0;
-}
-
-/*
- * Configure TermChar and TermCharEnable
- */
-static int usbtmc488_ioctl_config_termc(struct usbtmc_device_data *data,
-				void __user *arg)
-{
-	struct usbtmc_termchar termc;
-
-	if (copy_from_user(&termc, arg, sizeof(termc)))
-		return -EFAULT;
-
-	if ((termc.term_char_enabled > 1) ||
-		(termc.term_char_enabled &&
-			!(data->capabilities.device_capabilities & 1)))
-		return -EINVAL;
-
-	data->TermChar = termc.term_char;
-	data->TermCharEnabled = termc.term_char_enabled;
-
-	return 0;
-}
 
 /*
  * Sends a REQUEST_DEV_DEP_MSG_IN message on the Bulk-IN endpoint.
@@ -1341,6 +1212,9 @@ static const struct attribute_group data_attr_grp = {
 	.attrs = data_attrs,
 };
 
+/*
+ * Flash activity indicator on device
+ */
 static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 {
 	struct device *dev;
@@ -1376,6 +1250,136 @@ static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 exit:
 	kfree(buffer);
 	return rv;
+}
+
+static int usbtmc_ioctl_request(struct usbtmc_device_data *data, void __user *arg)
+{
+	struct device *dev = &data->intf->dev;
+	struct usbtmc_ctrlrequest request;
+	u8 *buffer = NULL;
+	int rv;
+	unsigned long res;
+
+	res = copy_from_user(&request, arg, sizeof(struct usbtmc_ctrlrequest));
+	if (res) {
+		return -EFAULT;
+	}
+
+	buffer = kmalloc(request.req.wLength, GFP_KERNEL); // TODO: if wLength == 0
+	if (!buffer)
+		return -ENOMEM;
+
+	if ((request.req.bRequestType & USB_DIR_IN) == 0) {
+		res = copy_from_user(buffer, request.data, request.req.wLength);
+		if (res) {
+			rv = -EFAULT;
+			goto exit;
+		}
+	}
+
+	rv = usb_control_msg(data->usb_dev,
+			usb_rcvctrlpipe(data->usb_dev, 0),
+			request.req.bRequest,
+			request.req.bRequestType,
+			request.req.wValue,
+			request.req.wIndex,
+			buffer, request.req.wLength, data->timeout);
+
+	if (rv < 0) {
+		dev_err(dev, "generic usb_control_msg failed %d\n", rv);
+		goto exit;
+	}
+	if ((request.req.bRequestType & USB_DIR_IN)) {
+		if (rv > request.req.wLength ) {
+			dev_warn(dev, "generic usb_control_msg returned too much data: %d\n", rv);
+			rv = request.req.wLength;
+		}
+
+		res = copy_to_user(request.data, buffer, rv );
+		if (res) {
+			rv = -EFAULT;
+		}
+	}
+
+ exit:
+	kfree(buffer);
+	return rv;
+}
+
+/*
+ * Get the usb timeout value
+ */
+static int usbtmc_ioctl_get_timeout(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u32 timeout;
+
+	timeout = data->timeout;
+
+        if (copy_to_user(arg, &timeout, sizeof(timeout)))
+                return -EFAULT;
+
+	return 0;
+}
+
+/*
+ * Set the usb timeout value
+ */
+static int usbtmc_ioctl_set_timeout(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u32 timeout;
+
+	if (copy_from_user(&timeout, arg, sizeof(timeout)))
+		return -EFAULT;
+
+	if (timeout < USBTMC_MIN_TIMEOUT)
+		return -EINVAL;
+
+	data->timeout = timeout;
+
+	return 0;
+}
+
+/*
+ * enables/disables sending EOM on write
+ */
+static int usbtmc_ioctl_eom_enable(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u8 eom_enable;
+
+	if (copy_from_user(&eom_enable, arg, sizeof(eom_enable)))
+		return -EFAULT;
+
+	if (eom_enable > 1)
+		return -EINVAL;
+
+	data->eom_val = eom_enable;
+
+	return 0;
+}
+
+/*
+ * Configure TermChar and TermCharEnable
+ */
+static int usbtmc_ioctl_config_termc(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	struct usbtmc_termchar termc;
+
+	if (copy_from_user(&termc, arg, sizeof(termc)))
+		return -EFAULT;
+
+	if ((termc.term_char_enabled > 1) ||
+		(termc.term_char_enabled &&
+			!(data->capabilities.device_capabilities & 1)))
+		return -EINVAL;
+
+	data->TermChar = termc.term_char;
+	data->TermCharEnabled = termc.term_char_enabled;
+
+	return 0;
 }
 
 static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -1416,23 +1420,23 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case USBTMC_IOCTL_CTRL_REQUEST:
-		retval = usbtmc488_ioctl_request(data, (void __user *)arg);
+		retval = usbtmc_ioctl_request(data, (void __user *)arg);
 		break;
 
 	case USBTMC_IOCTL_GET_TIMEOUT:
-		retval = usbtmc488_ioctl_get_timeout(data, (void __user *)arg);
+		retval = usbtmc_ioctl_get_timeout(data, (void __user *)arg);
 		break;
 
 	case USBTMC_IOCTL_SET_TIMEOUT:
-		retval = usbtmc488_ioctl_set_timeout(data, (void __user *)arg);
+		retval = usbtmc_ioctl_set_timeout(data, (void __user *)arg);
 		break;
 
 	case USBTMC_IOCTL_EOM_ENABLE:
-		retval = usbtmc488_ioctl_eom_enable(data, (void __user *)arg);
+		retval = usbtmc_ioctl_eom_enable(data, (void __user *)arg);
 		break;
 
 	case USBTMC_IOCTL_CONFIG_TERMCHAR:
-		retval = usbtmc488_ioctl_config_termc(data, (void __user *)arg);
+		retval = usbtmc_ioctl_config_termc(data, (void __user *)arg);
 		break;
 
 	case USBTMC488_IOCTL_GET_CAPS:
