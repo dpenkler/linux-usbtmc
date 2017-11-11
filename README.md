@@ -168,7 +168,8 @@ insmod usbtmc.ko io_buffer_size=262144
 
 Separate ioctl's to set and get the usb timeout value for a device.
 By default the timeout is set to 5000 milliseconds unless changed by
-the ***usb_timout*** module parameter.
+the ***usb_timeout*** module parameter.
+
 USBTMC_IOCTL_SET_TIMEOUT will return with error EINVAL if timeout < 500
 
 Example
@@ -190,6 +191,7 @@ control pipe.
 
 Enables or disables setting the EOM bit on write.
 By default the EOM bit is set on the last transfer of a write.
+
 Will return with error EINVAL if eom is not 0 or 1
 
 Example
@@ -205,7 +207,8 @@ Example
 ### ioctl to configure TermChar and TermCharEnable
 
 Allows enabling/disabling of terminating a read on reception of term_char.
-By default TermCharEnabled is false and TermChar is \n (0x0a).
+By default TermCharEnabled is false and TermChar is '\n' (0x0a).
+
 Will return with error EINVAL if term_char_enabled is not 0 or 1 or if
 attempting to enable term_char when the device does not support terminating
 a read when a byte matches the specified term_char.
