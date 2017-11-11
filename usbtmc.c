@@ -123,6 +123,7 @@ struct usbtmc_device_data {
 	u8 TermChar;
 	bool TermCharEnabled;
 	bool auto_abort;
+	bool eom_val;
 
 	bool zombie; /* fd of disconnected device */
 
@@ -579,7 +580,7 @@ static int usbtmc488_ioctl_request(struct usbtmc_device_data *data, void __user 
 	if (rv < 0) {
 		dev_err(dev, "generic usb_control_msg failed %d\n", rv);
 		goto exit;
-	} 
+	}
 	if ((request.req.bRequestType & USB_DIR_IN)) {
 		if (rv > request.req.wLength ) {
 			dev_warn(dev, "generic usb_control_msg returned too much data: %d\n", rv);
@@ -671,6 +672,25 @@ static int usbtmc488_ioctl_set_timeout(struct usbtmc_device_data *data,
 		return -EINVAL;
 
 	data->timeout = timeout;
+
+	return 0;
+}
+
+/*
+ * enables/disables sending EOM on write
+ */
+static int usbtmc488_ioctl_eom_enable(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	__u8 eom_enable;
+
+	if (copy_from_user(&eom_enable, arg, sizeof(eom_enable)))
+		return -EFAULT;
+
+	if (eom_enable > 1)
+		return -EINVAL;
+
+	data->eom_val = eom_enable;
 
 	return 0;
 }
@@ -949,7 +969,7 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 			buffer[8] = 0;
 		} else {
 			this_part = remaining;
-			buffer[8] = 1;
+			buffer[8] = data->eom_val;
 		}
 
 		/* Setup IO buffer for DEV_DEP_MSG_OUT message */
@@ -1415,6 +1435,10 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case USBTMC488_IOCTL_SET_TIMEOUT:
 		retval = usbtmc488_ioctl_set_timeout(data, (void __user *)arg);
 		break;
+
+	case USBTMC488_IOCTL_EOM_ENABLE:
+		retval = usbtmc488_ioctl_eom_enable(data, (void __user *)arg);
+		break;
 	}
 
 skip_io_on_zombie:
@@ -1584,6 +1608,7 @@ static int usbtmc_probe(struct usb_interface *intf,
 	data->TermCharEnabled = 0;
 	data->TermChar = '\n';
 	data->timeout  = usb_timeout;
+	data->eom_val  = 1;
 	/*  2 <= bTag <= 127   USBTMC-USB488 subclass specification 4.3.1 */
 	data->iin_bTag = 2;
 

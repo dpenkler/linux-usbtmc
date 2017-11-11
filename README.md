@@ -14,6 +14,7 @@ a kernel.org release:
  - module params
  - user get/set ioctls for usb timeout
  - ioctl to send generic usb control messages
+ - ioctl to control setting of EOM bit in writes
  
 The remaining features are available in the standard kernel.org releases >= 4.6.
 
@@ -170,6 +171,22 @@ Separate ioctl's to set and get the usb timeout value for a device.
 
 Allows user programs to send control messages to a device over the
 control pipe.
+
+### ioctl to control setting EOM bit
+
+Enables or disables setting the EOM bit on write.
+By default the EOM bit is set on the last transfer of a write.
+
+Example
+
+```C
+	unsigned char eom;
+....
+	eom = 0; // disable setting of EOM bit on write 
+	ioctl(fd,USBTMC488_IOCTL_EOM_ENABLE,&eom)
+
+```
+
 
 
 ## Issues and enhancement requests

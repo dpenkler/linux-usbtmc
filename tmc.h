@@ -62,6 +62,7 @@ struct usbtmc_ctrlrequest
 #define USBTMC488_IOCTL_TRIGGER 	_IO(USBTMC_IOC_NR, 22)
 #define USBTMC488_IOCTL_GET_TIMEOUT 	_IOR(USBTMC_IOC_NR, 23, unsigned int)
 #define USBTMC488_IOCTL_SET_TIMEOUT 	_IOW(USBTMC_IOC_NR, 24, unsigned int)
+#define USBTMC488_IOCTL_EOM_ENABLE	_IOW(USBTMC_IOC_NR, 25, unsigned char)
 
 /* Driver encoded usb488 capabilities */
 #define USBTMC488_CAPABILITY_TRIGGER         1
