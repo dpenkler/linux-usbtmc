@@ -1419,6 +1419,22 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		retval = usbtmc488_ioctl_request(data, (void __user *)arg);
 		break;
 
+	case USBTMC_IOCTL_GET_TIMEOUT:
+		retval = usbtmc488_ioctl_get_timeout(data, (void __user *)arg);
+		break;
+
+	case USBTMC_IOCTL_SET_TIMEOUT:
+		retval = usbtmc488_ioctl_set_timeout(data, (void __user *)arg);
+		break;
+
+	case USBTMC_IOCTL_EOM_ENABLE:
+		retval = usbtmc488_ioctl_eom_enable(data, (void __user *)arg);
+		break;
+
+	case USBTMC_IOCTL_CONFIG_TERMCHAR:
+		retval = usbtmc488_ioctl_config_termc(data, (void __user *)arg);
+		break;
+
 	case USBTMC488_IOCTL_GET_CAPS:
 		retval = copy_to_user((void __user *)arg,
 				&data->usb488_caps,
@@ -1448,22 +1464,6 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case USBTMC488_IOCTL_TRIGGER:
 		retval = usbtmc488_ioctl_trigger(data);
-		break;
-
-	case USBTMC488_IOCTL_GET_TIMEOUT:
-		retval = usbtmc488_ioctl_get_timeout(data, (void __user *)arg);
-		break;
-
-	case USBTMC488_IOCTL_SET_TIMEOUT:
-		retval = usbtmc488_ioctl_set_timeout(data, (void __user *)arg);
-		break;
-
-	case USBTMC488_IOCTL_EOM_ENABLE:
-		retval = usbtmc488_ioctl_eom_enable(data, (void __user *)arg);
-		break;
-
-	case USBTMC488_IOCTL_CONFIG_TERMCHAR:
-		retval = usbtmc488_ioctl_config_termc(data, (void __user *)arg);
 		break;
 	}
 

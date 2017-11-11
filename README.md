@@ -167,7 +167,20 @@ insmod usbtmc.ko io_buffer_size=262144
 ### ioctl's to set/get the usb timeout value
 
 Separate ioctl's to set and get the usb timeout value for a device.
+By default the timeout is set to 5000 milliseconds unless changed by
+the ***usb_timout*** module parameter.
+USBTMC_IOCTL_SET_TIMEOUT will return with error EINVAL if timeout < 500
 
+Example
+
+```C
+	unsigned int timeout, oldtimeout;
+....
+	ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&oldtimeout)
+	timeout = 1000;
+	ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)
+
+```
 ### ioctl to send generic usb control requests
 
 Allows user programs to send control messages to a device over the
@@ -185,7 +198,7 @@ Example
 	unsigned char eom;
 ....
 	eom = 0; // disable setting of EOM bit on write 
-	ioctl(fd,USBTMC488_IOCTL_EOM_ENABLE,&eom)
+	ioctl(fd,USBTMC_IOCTL_EOM_ENABLE,&eom)
 
 ```
 
@@ -204,7 +217,7 @@ Example
 ....
 	termc.term_char_enabled = 1; // enable terminating reads on term_char
 	termc.term_char = '\n';     
-	ioctl(fd,USBTMC488_IOCTL_CONFIG_TERMCHAR,&termc)
+	ioctl(fd,USBTMC_IOCTL_CONFIG_TERMCHAR,&termc)
 
 ```
 
