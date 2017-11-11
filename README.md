@@ -15,6 +15,7 @@ a kernel.org release:
  - user get/set ioctls for usb timeout
  - ioctl to send generic usb control messages
  - ioctl to control setting of EOM bit in writes
+ - ioctl to configure TermChar and TermCharEnable
  
 The remaining features are available in the standard kernel.org releases >= 4.6.
 
@@ -176,6 +177,7 @@ control pipe.
 
 Enables or disables setting the EOM bit on write.
 By default the EOM bit is set on the last transfer of a write.
+Will return with error EINVAL if eom is not 0 or 1
 
 Example
 
@@ -187,6 +189,24 @@ Example
 
 ```
 
+### ioctl to configure TermChar and TermCharEnable
+
+Allows enabling/disabling of terminating a read on reception of term_char.
+By default TermCharEnabled is false and TermChar is \n (0x0a).
+Will return with error EINVAL if term_char_enabled is not 0 or 1 or if
+attempting to enable term_char when the device does not support terminating
+a read when a byte matches the specified term_char.
+
+Example
+
+```C
+	struct usbtmc_termc termc;
+....
+	termc.term_char_enabled = 1; // enable terminating reads on term_char
+	termc.term_char = '\n';     
+	ioctl(fd,USBTMC488_IOCTL_CONFIG_TERMCHAR,&termc)
+
+```
 
 
 ## Issues and enhancement requests

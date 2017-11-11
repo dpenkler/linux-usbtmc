@@ -696,6 +696,28 @@ static int usbtmc488_ioctl_eom_enable(struct usbtmc_device_data *data,
 }
 
 /*
+ * Configure TermChar and TermCharEnable
+ */
+static int usbtmc488_ioctl_config_termc(struct usbtmc_device_data *data,
+				void __user *arg)
+{
+	struct usbtmc_termchar termc;
+
+	if (copy_from_user(&termc, arg, sizeof(termc)))
+		return -EFAULT;
+
+	if ((termc.term_char_enabled > 1) ||
+		(termc.term_char_enabled &&
+			!(data->capabilities.device_capabilities & 1)))
+		return -EINVAL;
+
+	data->TermChar = termc.term_char;
+	data->TermCharEnabled = termc.term_char_enabled;
+
+	return 0;
+}
+
+/*
  * Sends a REQUEST_DEV_DEP_MSG_IN message on the Bulk-IN endpoint.
  * @transfer_size: number of bytes to request from the device.
  *
@@ -1438,6 +1460,10 @@ static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case USBTMC488_IOCTL_EOM_ENABLE:
 		retval = usbtmc488_ioctl_eom_enable(data, (void __user *)arg);
+		break;
+
+	case USBTMC488_IOCTL_CONFIG_TERMCHAR:
+		retval = usbtmc488_ioctl_config_termc(data, (void __user *)arg);
 		break;
 	}
 

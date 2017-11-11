@@ -45,6 +45,12 @@ struct usbtmc_ctrlrequest
 	void* data;
 } __attribute__ ((packed));
 
+struct usbtmc_termchar
+{
+	__u8 term_char;
+	__u8 term_char_enabled; // bool
+} __attribute__ ((packed));
+
 /* Request values for USBTMC driver's ioctl entry point */
 #define USBTMC_IOC_NR			91
 #define USBTMC_IOCTL_INDICATOR_PULSE	_IO(USBTMC_IOC_NR, 1)
@@ -63,6 +69,7 @@ struct usbtmc_ctrlrequest
 #define USBTMC488_IOCTL_GET_TIMEOUT 	_IOR(USBTMC_IOC_NR, 23, unsigned int)
 #define USBTMC488_IOCTL_SET_TIMEOUT 	_IOW(USBTMC_IOC_NR, 24, unsigned int)
 #define USBTMC488_IOCTL_EOM_ENABLE	_IOW(USBTMC_IOC_NR, 25, unsigned char)
+#define USBTMC488_IOCTL_CONFIG_TERMCHAR	_IOW(USBTMC_IOC_NR, 25, struct usbtmc_termchar)
 
 /* Driver encoded usb488 capabilities */
 #define USBTMC488_CAPABILITY_TRIGGER         1
