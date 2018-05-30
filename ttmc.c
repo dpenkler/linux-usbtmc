@@ -163,7 +163,7 @@ int rscope(char *buf, int max_len) {
 void wait_for_srq() {
 	struct pollfd pfd;
 	pfd.fd = fd;
-	pfd.events = POLLIN;
+	pfd.events = POLLPRI;
 	poll(&pfd,1,-1);
 }
 
@@ -238,7 +238,7 @@ int main () {
   while (1) {
     printf("Enter command: [I]nteractive,  [T]est, [Q]uit:");
     fflush(stdout);
-    
+
     read(0,buf,MAX_BL);
     command = buf[0];
     switch (command) {
@@ -257,11 +257,11 @@ int main () {
 	    fflush(stdout);
 	    prompt = 0;
 	  }
-	  
+
 	  memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
-	  
+
 	  FD_SET(0,&fdsel[0]);
-	  FD_SET(fd,&fdsel[0]);
+	  FD_SET(fd,&fdsel[2]);
 	  n = select(fd+1,
 		     (fd_set *)(&fdsel[0]),
 		     (fd_set *)(&fdsel[1]),
@@ -272,7 +272,7 @@ int main () {
 	    break;
 	  }
 
-	  if (FD_ISSET(fd,&fdsel[0])) {
+	  if (FD_ISSET(fd,&fdsel[2])) {
 	    while (STB_MAV & get_stb()) {
 	      if (0 < rscope(buf,MAX_BL)) printf("%s",buf);
 	      else break;
@@ -294,7 +294,7 @@ int main () {
 	}
       }
       break;
-      
+
     case 'T':
     case 't':
       getTS(); /* initialise time stamp */
@@ -368,7 +368,7 @@ int main () {
 	if (part <=2 )
 	  printf("However expected number of parts to be greater than 1\n");
       }
-      
+
     tstb:
 
       /* Test read STB ioctl */
@@ -393,7 +393,7 @@ int main () {
       sscope("*CLS\n");  /* Clear status */
       //      sscope("*TST?\n"); /* Initiate long operation: self test */
       sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
-      
+
       /* Poll  STB until MAV bit is set */
       while (1) {
 	tmp = get_stb();
@@ -407,7 +407,7 @@ int main () {
       }
 
       goto tsel; // skip tren
-      
+
     tren:
 
       printf("Testing remote disable, press enter to continue\n");
@@ -455,7 +455,7 @@ int main () {
 
       /* wait here for MAV */
 
-      FD_SET(fd,&fdsel[0]);
+      FD_SET(fd,&fdsel[2]);
       n = select(fd+1,
 		 (fd_set *)(&fdsel[0]),
 		 (fd_set *)(&fdsel[1]),
@@ -466,7 +466,7 @@ int main () {
 	exit(1);
       }
 
-      if (FD_ISSET(fd,&fdsel[0])) {
+      if (FD_ISSET(fd,&fdsel[2])) {
 	show_stb(get_stb());
 	rscope(buf,MAX_BL);
 	printf("Measurement result is: %s",buf);

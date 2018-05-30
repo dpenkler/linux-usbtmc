@@ -568,8 +568,8 @@ static int usbtmc488_ioctl_trigger(struct usbtmc_device_data *data)
 
 	kfree(buffer);
 	if (retval < 0) {
-		dev_err(&data->intf->dev,
-			"usb_bulk_msg in usbtmc488_ioctl_trigger() returned %d\n", retval);
+		dev_err(&data->intf->dev, "%s returned %d\n",
+			__func__, retval);
 		return retval;
 	}
 
@@ -626,12 +626,11 @@ static int send_request_dev_dep_msg_in(struct usbtmc_device_data *data, size_t t
 		data->bTag++;
 
 	kfree(buffer);
-	if (retval < 0) {
-		dev_err(&data->intf->dev, "usb_bulk_msg in send_request_dev_dep_msg_in() returned %d\n", retval);
-		return retval;
-	}
+	if (retval < 0)
+		dev_err(&data->intf->dev, "%s returned %d\n",
+			__func__, retval);
 
-	return 0;
+	return retval;
 }
 
 static ssize_t usbtmc_read(struct file *filp, char __user *buf,
@@ -684,7 +683,8 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 				      buffer, io_buffer_size, &actual,
 				      data->timeout);
 
-		dev_dbg(dev, "usb_bulk_msg: retval(%u), done(%zu), remaining(%zu), actual(%d)\n", retval, done, remaining, actual);
+	dev_dbg(dev, "%s: bulk_msg retval(%u), actual(%d)\n",
+		__func__, retval, actual);
 
 		/* Store bTag (in case we need to abort) */
 		data->bTag_last_read = data->bTag;
@@ -997,7 +997,7 @@ usbtmc_clear_bulk_out_halt:
 	rv = usb_clear_halt(data->usb_dev,
 			    usb_sndbulkpipe(data->usb_dev, data->bulk_out));
 	if (rv < 0) {
-		dev_err(dev, "usb_control_msg returned %d\n", rv);
+		dev_err(dev, "usb_clear_halt returned %d\n", rv);
 		goto exit;
 	}
 	rv = 0;
@@ -1346,7 +1346,6 @@ static int usbtmc_ioctl_config_termc(struct usbtmc_device_data *data,
 static long usbtmc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct usbtmc_device_data *data = file->private_data;
-	struct device *dev = &data->usb_dev->dev;
 	int retval = -EBADRQC;
 
 	mutex_lock(&data->io_mutex);
@@ -1458,7 +1457,7 @@ static unsigned int usbtmc_poll(struct file *file, poll_table *wait)
 
 	poll_wait(file, &data->waitq, wait);
 
-	mask = (atomic_read(&data->srq_asserted)) ? POLLIN | POLLRDNORM : 0;
+	mask = (atomic_read(&data->srq_asserted)) ? POLLPRI : 0;
 
 no_poll:
 	mutex_unlock(&data->io_mutex);
@@ -1473,8 +1472,8 @@ static const struct file_operations fops = {
 	.release	= usbtmc_release,
 	.unlocked_ioctl	= usbtmc_ioctl,
 #ifdef CONFIG_COMPAT
-	.compat_ioctl  = usbtmc_ioctl,
-#endif	
+	.compat_ioctl	= usbtmc_ioctl,
+#endif
 	.fasync         = usbtmc_fasync,
 	.poll           = usbtmc_poll,
 	.llseek		= default_llseek,
@@ -1510,7 +1509,7 @@ static void usbtmc_interrupt(struct urb *urb)
 		if (data->iin_buffer[0] == 0x81) {
 			if (data->fasync)
 				kill_fasync(&data->fasync,
-					SIGIO, POLL_IN);
+					SIGIO, POLL_PRI);
 
 			atomic_set(&data->srq_asserted, 1);
 			wake_up_interruptible(&data->waitq);
@@ -1521,11 +1520,13 @@ static void usbtmc_interrupt(struct urb *urb)
 	case -EOVERFLOW:
 		dev_err(dev, "overflow with length %d, actual length is %d\n",
 			data->iin_wMaxPacketSize, urb->actual_length);
+		/* fall through */
 	case -ECONNRESET:
 	case -ENOENT:
 	case -ESHUTDOWN:
 	case -EILSEQ:
 	case -ETIME:
+	case -EPIPE:
 		/* urb terminated, clean up */
 		dev_dbg(dev, "urb terminated, status: %d\n", status);
 		return;
@@ -1545,6 +1546,7 @@ static void usbtmc_free_int(struct usbtmc_device_data *data)
 	usb_kill_urb(data->iin_urb);
 	kfree(data->iin_buffer);
 	usb_free_urb(data->iin_urb);
+	data->iin_urb = NULL;
 	kref_put(&data->kref, usbtmc_delete);
 }
 
@@ -1678,8 +1680,8 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 	retcode = usb_register_dev(intf, &usbtmc_class);
 	if (retcode) {
-		dev_err(&intf->dev, "Not able to get a minor"
-			" (base %u, slice default): %d\n", USBTMC_MINOR_BASE,
+		dev_err(&intf->dev, "Not able to get a minor (base %u, slice default): %d\n",
+			USBTMC_MINOR_BASE,
 			retcode);
 		goto error_register;
 	}
@@ -1699,7 +1701,7 @@ static void usbtmc_disconnect(struct usb_interface *intf)
 {
 	struct usbtmc_device_data *data;
 
-	dev_dbg(&intf->dev, "usbtmc_disconnect called\n");
+	dev_dbg(&intf->dev, "%s - called\n", __func__);
 
 	data = usb_get_intfdata(intf);
 	usb_deregister_dev(intf, &usbtmc_class);
