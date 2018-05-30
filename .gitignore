@@ -50,6 +50,6 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
-
+.cache.mk
 # test programme
 ttmc
