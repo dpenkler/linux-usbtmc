@@ -96,13 +96,11 @@ Example
 In many situations operations on multiple instruments need to be
 synchronized. poll/select provide a convenient way of waiting on a
 number of different instruments and other peripherals simultaneously.
-When the instrument sends an SRQ notification the fd becomes readable.
-If the MAV (message available) event is enabled the normal semantic of
-poll/select on a readable file descriptor is achieved. However many
-other conditions can be set to cause SRQ. To reset the poll/select
-condition a READ_STATUS_BYTE ioctl must be performed.
+When the instrument sends an SRQ notification the fd is notified of an
+exceptional condition. To reset the poll/select condition a
+READ_STATUS_BYTE ioctl must be performed.
 
-Example
+Example with select()
 
 ```C
   FD_SET(fd,&fdsel[0]);
@@ -112,7 +110,7 @@ Example
 	  (fd_set *)(&fdsel[2]),
 	  NULL);
   
-  if (FD_ISSET(fd,&fdsel[0])) {
+  if (FD_ISSET(fd,&fdsel[2])) {
           ioctl(fd,USBTMC488_IOCTL_READ_STB,&stb)
 	  if (stb & 16) { /* test for message available bit */
 	      len = read(fd,buf,sizeof(buf));
@@ -123,7 +121,17 @@ Example
 	  }
   }
 ```
+Example with poll()
 
+```C
+/* Wait for SRQ using poll() */
+void wait_for_srq(int fd) {
+	struct pollfd pfd;
+	pfd.fd = fd;
+	pfd.events = POLLPRI;
+	poll(&pfd,1,-1);
+}
+```
 
 ### New ioctls to enable and disable local controls on an instrument
 
