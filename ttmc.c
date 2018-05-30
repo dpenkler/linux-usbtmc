@@ -60,20 +60,47 @@ typedef struct stat_entry {
 	unsigned int mask;
 } stat_entryT;
 
+typedef enum {SRE = 1, ESR = 2, ESE = 3, STB = 4} regT;
+const char *regNames[] = {"none","SRE","ESR","ESE","STB"};
+
 /*
    Service request enable register (SRE) Bit definitions
  */
 
-#define SRE_Trigger            1
-#define SRE_User               2
-#define SRE_Message            4
-#define SRE_MessageAvailable  16
-#define SRE_Event_Status      32
-#define SRE_Operation_Status 128
+#define SRE_TRG          1
+#define SRE_USR          2
+#define SRE_MSG          4
+#define SRE_MAV         16
+#define SRE_ESB         32
+#define SRE_OPER       128
 
 /* need these defines to inline bit definitions in SRE command strings */
 #define xstr(s) str(s)
 #define str(s) #s
+
+/*
+ Event Status Register (ESR) bit definitions
+*/
+
+#define ESR_PON     1
+#define ESR_URQ     2
+#define ESR_CME     4
+#define ESR_EXE     8
+#define ESR_DDE    16
+#define ESR_QYE    32
+#define ESR_RQC    64
+#define ESR_OPC   128
+
+const stat_entryT esr_bits[NUM_STAT_BITS] = {
+	{"PON",  ESR_PON},
+	{"URQ",  ESR_URQ},
+	{"CME",  ESR_CME},
+	{"EXE",  ESR_EXE},
+	{"DDE",  ESR_DDE},
+	{"QYE",  ESR_QYE},
+	{"RQC",  ESR_RQC},
+	{"OPC",  ESR_OPC}
+};
 
 /*
    Status register bit definitions
@@ -111,14 +138,13 @@ double getTS() {
 	return ts;
 }
 
-static void show_stb(unsigned char stb) {
+
+static void show_bits(const stat_entryT table[], unsigned char val) {
 	int i;
-	printf("%11.6f STB = ",getTS());
 	for (i=0;i<NUM_STAT_BITS;i++)
-		if (stb & stb_bits[i].mask) {
-			printf("%s ",stb_bits[i].desc);
+		if (val & table[i].mask) {
+			printf("%s ", table[i].desc);
 		}
-	printf("\n");
 }
 
 static int flag=0; /* set to 1 if srq handler called */
@@ -127,25 +153,10 @@ void srq_handler(int sig) {
 	flag = 1;
 }
 
-
-unsigned int get_stb() {
-	unsigned char stb;
-	if (0 != ioctl(fd,USBTMC488_IOCTL_READ_STB,&stb)) {
-		perror("stb ioctl failed");
-		exit(1);
-	}	return stb;
-}
-
 /* Send string to scope */
 void sscope(char *msg) {
 	write(fd,msg,strlen(msg));
-	//	printf("sscope: %s",msg);
-}
-
-void setSRE(int val) {
-	char buf[32];
-	snprintf(buf,32,"*SRE %d\n",val);
-	sscope(buf);
+//	printf("sscope: %s",msg);
 }
 
 /* Read string from scope */
@@ -158,6 +169,50 @@ int rscope(char *buf, int max_len) {
 	buf[len] = 0; /* zero terminate */
 	return len;
 }
+
+unsigned int get_stb() {
+	unsigned char stb;
+	if (0 != ioctl(fd,USBTMC488_IOCTL_READ_STB,&stb)) {
+		perror("stb ioctl failed");
+		exit(1);
+	}	return stb;
+}
+
+void setReg(regT reg, int val) {
+	char buf[32];
+	snprintf(buf,32,"*%s %d\n",regNames[reg],val);
+	sscope(buf);
+}
+
+int getReg(regT reg) {
+	char buf[32];
+	int val;
+	snprintf(buf,32,"*%s?\n",regNames[reg]);
+	sscope(buf);
+	rscope(buf,32);
+	sscanf(buf,"%d",&val);
+	return val;
+}
+
+static int showReg(regT reg, unsigned char val) {
+	int i;
+#ifdef TIMESTAMP
+	printf("%11.6f " ,getTS());
+#endif
+	printf("%s = ", regNames[reg]);
+	switch (reg) {
+	case ESE:
+	case ESR: show_bits(esr_bits,val);
+		break;
+	case STB:
+	case SRE:
+		show_bits(stb_bits,val);
+		break;
+	}
+	printf("\n");
+	return val;
+}
+
 
 /* Wait for SRQ using poll() */
 void wait_for_srq() {
@@ -248,49 +303,65 @@ int main () {
       {
 	int prompt = 1;
 	int srun   = 1;
-	setSRE(SRE_MessageAvailable);
+	int esr;
+	/* Report all errors */
+	setReg(ESE, ESR_CME | ESR_EXE | ESR_DDE | ESR_QYE);
+	setReg(SRE, SRE_MAV |  SRE_ESB);
+	showReg(ESE, getReg(ESE));
+	showReg(ESR, getReg(ESR));
+	showReg(SRE, getReg(SRE));
+	showReg(STB, get_stb());
 	sscope("*CLS\n");
 	printf("Enter interactive mode, send Ctrl-D (EOF) to exit\n");
 	while (srun) {
-	  if (prompt) {
-	    printf("Enter string to send: ");
-	    fflush(stdout);
-	    prompt = 0;
-	  }
+		if (prompt) {
+			printf("Enter string to send: ");
+			fflush(stdout);
+			prompt = 0;
+		}
 
-	  memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
+		memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
+		get_stb(); // reset SRQ condition
+		FD_SET(0,&fdsel[0]);
+		FD_SET(fd,&fdsel[2]);
+		n = select(fd+1,
+			(fd_set *)(&fdsel[0]),
+			(fd_set *)(&fdsel[1]),
+			(fd_set *)(&fdsel[2]),
+			NULL);
+		if (n <= 0) {
+			perror("select\n");
+			break;
+		}
 
-	  FD_SET(0,&fdsel[0]);
-	  FD_SET(fd,&fdsel[2]);
-	  n = select(fd+1,
-		     (fd_set *)(&fdsel[0]),
-		     (fd_set *)(&fdsel[1]),
-		     (fd_set *)(&fdsel[2]),
-		     NULL);
-	  if (n <= 0) {
-	    perror("select\n");
-	    break;
-	  }
+		if (FD_ISSET(fd,&fdsel[2])) {
+			while (STB_MAV & get_stb()) {
+				if (0 < rscope(buf,MAX_BL)) printf("%s",buf);
+				else break;
+			}
+			prompt = 1;
+			while (STB_ESB & get_stb()) {
+				esr = getReg(ESR);
+				if (esr) {
+					// showReg(ESR, esr);
+					sscope(":SYST:ERR?\n");
+					rscope(buf,MAX_BL);
+					printf("Error: %s",buf);
+				}
+			}
+		}
 
-	  if (FD_ISSET(fd,&fdsel[2])) {
-	    while (STB_MAV & get_stb()) {
-	      if (0 < rscope(buf,MAX_BL)) printf("%s",buf);
-	      else break;
-	    }
-	    prompt = 1;
-	  }
-
-	  if (FD_ISSET(0,&fdsel[0])) {
-	    len = read(0,buf,MAX_BL-1);
-	    if (len > 0) {
-	      buf[len] = 0;
-	      sscope(buf);
-	    } else {
-	      setSRE(0);
-	      printf("\nExit interactive mode\n");
-	      break;
-	    }
-	  }
+		if (FD_ISSET(0,&fdsel[0])) {
+			len = read(0,buf,MAX_BL-1);
+			if (len > 0) {
+				buf[len] = 0;
+				sscope(buf);
+			} else {
+				setReg(SRE,0);
+				printf("\nExit interactive mode\n");
+				break;
+			}
+		}
 	}
       }
       break;
@@ -339,7 +410,7 @@ int main () {
 	termc_enabled =  (termce == '0') ? 0 : 1;
 	printf("New: TermChar x0%02x, TermCharEnabled %d\n",
 		       (int)termchar,termc_enabled);
-	setSRE(SRE_MessageAvailable);
+	setReg(SRE, SRE_MAV);
 	sscope("*CLS\n");
 	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
 	sleep(1);
@@ -348,7 +419,7 @@ int main () {
 	    printf("termc part %d is %s\n",part++, buf);
 	  else break;
 	}
-	// Put things back as they were 
+	// Put things back as they were
 	termc.term_char = old_termchar;
 	termc.term_char_enabled = old_termc_enabled;
 	res = ioctl(fd,USBTMC_IOCTL_CONFIG_TERMCHAR,&termc);
@@ -386,9 +457,9 @@ int main () {
 	fprintf(stderr,
 		"Warning: SCPI status byte = %x, ioctl status byte = %x\n",
 		tmp,tmp1);
-	show_stb(tmp);
+	showReg(STB,tmp);
       }
-      show_stb(tmp1);
+      showReg(STB,tmp1);
 
       sscope("*CLS\n");  /* Clear status */
       //      sscope("*TST?\n"); /* Initiate long operation: self test */
@@ -398,7 +469,7 @@ int main () {
       while (1) {
 	tmp = get_stb();
 	if (tmp & STB_MAV) { /* Test for MAV */
-	  show_stb(tmp);
+	  showReg(STB,tmp);
 	  rscope(buf,MAX_BL);
 	  printf("stb test success. Scope returned %s",buf);
 	  break;
@@ -419,7 +490,7 @@ int main () {
       }
       printf("Remote disabled\n");
       sscope("SYSTEM:DSP \"USBTMC_488 driver Test\"");
-      show_stb(get_stb()); // error ?
+      showReg(STB,get_stb()); // error ?
 
       printf("Testing Remote enable, press enter to continue\n");
       wait_for_user();
@@ -448,10 +519,10 @@ int main () {
       memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
       printf("\nTesting select\n");
       /* Set Mav mask and clear status */
-      setSRE(SRE_MessageAvailable);
+      setReg(SRE, SRE_MAV);
       sscope("*CLS\n");
       sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
-      show_stb(get_stb()); // clear srq
+      showReg(STB,get_stb()); // clear srq
 
       /* wait here for MAV */
 
@@ -467,9 +538,9 @@ int main () {
       }
 
       if (FD_ISSET(fd,&fdsel[2])) {
-	show_stb(get_stb());
+	showReg(STB,get_stb());
 	rscope(buf,MAX_BL);
-	printf("Measurement result is: %s",buf);
+	printf("Measurement result is: %s\n",buf);
 	printf("Select success\n");
       }
 
@@ -488,15 +559,15 @@ int main () {
       sscope(":WAV:SOURCE CHAN1\n");
       /* enable OPC */
       sscope("*ESE 1\n"); // set operation complete in the event status enable reg
-      setSRE(SRE_Event_Status); // enable srq on event status reg
-      show_stb(get_stb()); // clear srq
+      setReg(SRE, SRE_ESB); // enable srq on event status reg
+      showReg(STB, get_stb()); // clear srq
       flag = 0;
       sscope(":DIG CHAN1\n");
       sscope("*OPC\n");
 
       if (sleep(5)) {
 	stb = get_stb();
-	show_stb(stb);
+	showReg(STB,stb);
 	sscope(":WAV:POINTS?\n");
 	rscope(buf,MAX_BL);
 	printf("Points = %s",buf);
@@ -507,9 +578,9 @@ int main () {
       printf("\nTesting trigger ioctl\n");
       sscope(":TRIG:SOURCE EXT\n");
       sscope("*CLS\n");   // clear all status
-      setSRE(SRE_Trigger); // enable SRQ on trigger
+      setReg(SRE, SRE_TRG); // enable SRQ on trigger
       sscope(":DIG CHAN1\n");
-      show_stb(get_stb());
+      showReg(STB,get_stb());
 
       if (ioctl(fd,USBTMC488_IOCTL_TRIGGER)) {
 	perror("trigger ioctl failed");
@@ -518,7 +589,7 @@ int main () {
 
       wait_for_srq();
       stb = get_stb();
-      show_stb(stb);
+      showReg(STB, stb);
       printf("trigger ioctl %s\n", (stb & STB_TRG) ? "success" : "failure");
       sscope("*CLS\n");
       sscope(":RUN;:AUTOSCALE\n");
