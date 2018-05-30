@@ -176,7 +176,8 @@ void wait_for_user() {
 
 int main () {
   int rv;
-  unsigned int tmp,tmp1,caps,ren,timeout;
+  unsigned int tmp,tmp1,ren,timeout;
+  unsigned char caps;
   int len,n;
   unsigned char stb;
   char buf[MAX_BL],command;
@@ -191,11 +192,14 @@ int main () {
   }
 
   /* Send device clear */
-  ioctl(fd,USBTMC_IOCTL_CLEAR);
+  if (0 != ioctl(fd,USBTMC_IOCTL_CLEAR)) {
+	  perror("Dev clear ioctl failed");
+	  exit(1);
+  }
 
   /* Send clear status */
   sscope("*CLS\n");
-  
+
   /* Send identity query */
   sscope("*IDN?\n");
 
@@ -203,16 +207,22 @@ int main () {
   rscope(buf,MAX_BL);
   printf("*IDN? = %s\n",buf);
 
-  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
+  if (0 != ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout)) {
+	  perror("Get timeout ioctl failed");
+	  exit(1);
+  }
   printf("usb timeout is %ums\n",timeout);
   if (timeout != 1000) {
-    timeout = 1000;
-    printf("resetting timeout...");
-    ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout);
-    ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
-    printf(" timeout is now %ums\n",timeout);
+	  timeout = 1000;
+	  printf("resetting timeout...");
+	  if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
+		  perror("Set timeout ioctl failed");
+		  exit(1);
+	  }
+	  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
+	  printf(" timeout is now %ums\n",timeout);
   }
-  
+
   /* Get and display instrument capabilities */
   if (0 != ioctl(fd,USBTMC488_IOCTL_GET_CAPS,&caps)) {
 	  perror("get caps ioctl failed");

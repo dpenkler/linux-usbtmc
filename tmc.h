@@ -15,7 +15,7 @@
 #ifndef __LINUX_USB_TMC_H
 #define __LINUX_USB_TMC_H
 
-#include <linux/usb/ch9.h>
+#include <linux/types.h>
 
 /* USB TMC status values */
 #define USBTMC_STATUS_SUCCESS				0x01
@@ -39,9 +39,17 @@
 #define USBTMC488_REQUEST_GOTO_LOCAL			161
 #define USBTMC488_REQUEST_LOCAL_LOCKOUT			162
 
+struct usbtmc_request {
+	__u8 bRequestType;
+	__u8 bRequest;
+	__u16 wValue;
+	__u16 wIndex;
+	__u16 wLength;
+} __attribute__ ((packed));
+
 struct usbtmc_ctrlrequest
 {
-	struct usb_ctrlrequest req;
+	struct usbtmc_request req;
 	void* data;
 } __attribute__ ((packed));
 
