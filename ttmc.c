@@ -20,8 +20,8 @@
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
-//#include <linux/usb/tmc.h>
-#include "tmc.h"
+#include <linux/usb/tmc.h>
+//#include "tmc.h"
 
 #define NUM_CAPS 9
 typedef struct cap_entry {
@@ -44,6 +44,9 @@ const cap_entryT cap_list[NUM_CAPS] = {
 };
 
 static int fd;
+#define MAX_BL 2048
+unsigned char buf[MAX_BL];
+
 static const char *yesno[] = {"no","yes"};
 
 static void show_caps(unsigned char caps) {
@@ -82,14 +85,14 @@ const char *regNames[] = {"none","SRE","ESR","ESE","STB"};
  Event Status Register (ESR) bit definitions
 */
 
-#define ESR_PON     1
-#define ESR_URQ     2
-#define ESR_CME     4
-#define ESR_EXE     8
-#define ESR_DDE    16
-#define ESR_QYE    32
-#define ESR_RQC    64
-#define ESR_OPC   128
+#define ESR_OPC     1
+#define ESR_RQL     2
+#define ESR_QYE     4
+#define ESR_DDE     8
+#define ESR_EXE    16
+#define ESR_CME    32
+#define ESR_URQ    64
+#define ESR_PON   128
 
 const stat_entryT esr_bits[NUM_STAT_BITS] = {
 	{"PON",  ESR_PON},
@@ -98,7 +101,7 @@ const stat_entryT esr_bits[NUM_STAT_BITS] = {
 	{"EXE",  ESR_EXE},
 	{"DDE",  ESR_DDE},
 	{"QYE",  ESR_QYE},
-	{"RQC",  ESR_RQC},
+	{"RQL",  ESR_RQL},
 	{"OPC",  ESR_OPC}
 };
 
@@ -165,6 +168,7 @@ int rscope(char *buf, int max_len) {
 	if (len < 0) {
 	  perror("failed to read from scope");
 	  ioctl(fd,USBTMC_IOCTL_CLEAR);
+	  return 0;
 	}
 	buf[len] = 0; /* zero terminate */
 	return len;
@@ -213,7 +217,6 @@ static int showReg(regT reg, unsigned char val) {
 	return val;
 }
 
-
 /* Wait for SRQ using poll() */
 void wait_for_srq() {
 	struct pollfd pfd;
@@ -227,7 +230,42 @@ void wait_for_user() {
 	read(0,buf,1);
 }
 
-#define MAX_BL 2048
+static int testSTB() {
+	unsigned int tmp, tmp1;
+	int i;
+
+        /* Test read STB ioctl */
+	printf("\nTesting stb ioctl\n");
+	sscope("*CLS\n");
+	setReg(ESE, ESR_OPC); /* Set ESB in STB on OPC */
+	setReg(SRE, 0);       /* No SRQ */
+	tmp1 = get_stb();     /* ioctl first because SCPI query will set MAV */
+	tmp  = getReg(STB);   /* Use IEEE 488.2 *STB? SCPI query */
+	if (tmp != tmp1) {
+		fprintf(stderr,
+			"Warning: SCPI status byte = %x, ioctl status byte = %x\n",
+			tmp,tmp1);
+		showReg(STB,tmp);
+	}
+	showReg(STB,tmp1);
+
+	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1;*OPC\n"); /* Start "Operation" */
+
+	/* Poll  STB until ESB bit is set for OPC */
+	for (i=0;i<100;i++) {
+		tmp = get_stb();
+		if (tmp & STB_ESB) { /* Test for OPC */
+			rscope(buf,MAX_BL);
+			printf("Scope returned %s\n",buf);
+			printf("STB test success after %d iterations\n",i+1);
+			return 1;
+		}
+		usleep(10000); // wait 10 ms
+	}
+	sscope("*CLS\n");
+	printf("STB test failed.\n");
+	return 0;
+}
 
 int main () {
   int rv;
@@ -235,7 +273,7 @@ int main () {
   unsigned char caps;
   int len,n;
   unsigned char stb;
-  char buf[MAX_BL],command;
+  char command;
   int oflags;
   fd_set fdsel[3];
   int i;
@@ -291,11 +329,12 @@ int main () {
   sscope(":AUTOSCALE\n");
 
   while (1) {
-    printf("Enter command: [I]nteractive,  [T]est, [Q]uit:");
+    printf("Enter command: [I]nteractive,  [T]est, [S]tb, [Q]uit:");
     fflush(stdout);
 
-    read(0,buf,MAX_BL);
-    command = buf[0];
+    len = read(0,buf,MAX_BL);
+    if (len==0) command = 'q';
+    else    command = buf[0];
     switch (command) {
 
     case 'I':
@@ -365,6 +404,11 @@ int main () {
 	}
       }
       break;
+
+    case 'S':
+    case 's':
+	    testSTB();
+	    break;
 
     case 'T':
     case 't':
@@ -442,41 +486,7 @@ int main () {
 
     tstb:
 
-      /* Test read STB ioctl */
-      printf("\nTesting stb ioctl\n");
-      //  wait_for_user();
-
-      tmp1 = get_stb();
-
-      /* Use IEEE 488.2 *STB? command query to compare */
-      sscope("*STB?\n");
-      rscope(buf,MAX_BL);
-      tmp = atoi(buf);
-
-      if (tmp != tmp1) {
-	fprintf(stderr,
-		"Warning: SCPI status byte = %x, ioctl status byte = %x\n",
-		tmp,tmp1);
-	showReg(STB,tmp);
-      }
-      showReg(STB,tmp1);
-
-      sscope("*CLS\n");  /* Clear status */
-      //      sscope("*TST?\n"); /* Initiate long operation: self test */
-      sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
-
-      /* Poll  STB until MAV bit is set */
-      while (1) {
-	tmp = get_stb();
-	if (tmp & STB_MAV) { /* Test for MAV */
-	  showReg(STB,tmp);
-	  rscope(buf,MAX_BL);
-	  printf("stb test success. Scope returned %s",buf);
-	  break;
-	}
-	usleep(10000); // wait 10 ms
-      }
-
+      testSTB();
       goto tsel; // skip tren
 
     tren:
@@ -599,7 +609,7 @@ int main () {
       printf("ttmc: /done\n");
       close(fd);
       exit(0);
-    default: printf("%s : unknown command\n");
+    default: printf("%c : unknown command\n",command);
       break;
     }
   }
