@@ -20,8 +20,9 @@
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
-#include <linux/usb/tmc.h>
-//#include "tmc.h"
+//#include <linux/usb/tmc.h>
+#define __user
+#include "tmc.h"
 
 #define NUM_CAPS 9
 typedef struct cap_entry {
