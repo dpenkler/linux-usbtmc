@@ -1,23 +1,23 @@
 # linux-usbtmc driver
 
 This is an experimental linux driver for usb test measurement &
-control instruments that adds support for missing functions in
-USBTMC-USB488 spec and the ability to handle SRQ notifications with
-fasync or poll/select. Most of the functions have been incorporated in
-the linux kernel starting with version 4.6.  This package is provided
-for folks wanting to test or use driver features not yet supported by
-the standard usbtmc driver in their kernel.
+control instruments. It adds support for missing functions in
+USBTMC-USB488 spec, the ability to handle SRQ notifications with
+fasync or poll/select and a number of features required to support the
+IVI library. This package is provided for folks wanting to test or
+use driver features not yet supported by the standard usbtmc driver in
+their kernel.
 
 The following functions have not yet been incorporated into
 a kernel.org release:
- - trigger ioctl
  - module params
- - user get/set ioctls for usb timeout
- - ioctl to send generic usb control messages
- - ioctl to control setting of EOM bit in writes
- - ioctl to configure TermChar and TermCharEnable
+ - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
  
-The remaining features are available in the standard kernel.org releases >= 4.6.
+All the USBTMC-USB488 features are available in the standard kernel.org releases >= 4.19.0
+
+The IVI extensions will be incorporated into kernel releases > 4.19.0
+
+For details on the IVI extensions please see Guido Kiener's [repo](https://github.com/GuidoKiener/linux-usbtmc)
 
 ## Installation
 
@@ -36,12 +36,24 @@ To install the driver run `make install` as root.
 
 To load the driver execute `rmmod usbtmc; insmod usbtmc.ko` as root.
 
+Enable debug messages with insmod usbtmc.ko dyndbg=+p and use dmesg to see debug output.
+
 To compile your instrument control program ensure that it includes the
 tmc.h file from this repo. An example test program for an
 Agilent/Keysight scope is also provided. See the file ttmc.c
 To build the provided program run `make ttmc`
 
 To clean the directory of build files run `make clean`
+
+To run usbtmc applications as non-root, insert a file e.g. /etc/udev/rules.d/99-usbtmc.rules with the content:
+
+`KERNEL=="usbtmc[0-9]*", MODE="0660", GROUP="usbtmc"`
+
+and add yourself to the usbtmc group
+
+`sudo usermod -G usbtmc -a LOGIN`
+
+where LOGIN is your username. 
 
 ## Features
 
