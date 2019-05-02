@@ -15,7 +15,7 @@ a kernel.org release:
  
 All the USBTMC-USB488 features are available in the standard kernel.org releases >= 4.19.0
 
-The IVI extensions will be incorporated into kernel releases > 4.19.0
+The IVI extensions have been incorporated into kernel releases >= 4.20.0
 
 For details on the IVI extensions please see Guido Kiener's [repo](https://github.com/GuidoKiener/linux-usbtmc)
 
