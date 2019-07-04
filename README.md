@@ -12,6 +12,8 @@ The following functions have not yet been incorporated into
 a kernel.org release:
  - module params
  - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
+
+Note: The initial version incorporated into the 14.6.0 kernel release used POLLIN / select readfds for SRQ notifications. This was changed to POLLPRI / select exceptfds in the version incorporated in the 4.19.0 and subsequent kernel release.
  
 All the USBTMC-USB488 features are available in the standard kernel.org releases >= 4.19.0
 
@@ -25,7 +27,7 @@ Prerequisite: You need a prebuilt kernel with the configuration and
 kernel header files that were used to build it. Most distros have a
 "kernel headers" package for this
 
-To obtain the files either clone the repo with
+To obtain the driver source files either clone the repo with
 `git clone https://github.com/dpenkler/linux-usbtmc.git linux-usbtmc`
 or download the zip file and extract the zip file to a directory linux-usbtmc
 
@@ -153,7 +155,7 @@ for REN_CONTROL, GO_TO_LOCAL and LOCAL_LOCKOUT
 ### ioctl to cause a device to trigger
 
 This is equivalent to the IEEE 488 GET (Group Execute Trigger) action.
-While a the "*TRG" command can be sent to perform the same operation,
+While the "*TRG" command can be sent to perform the same operation,
 in some situations an instrument will be busy and unable to process
 the command immediately in which case the USBTMC488_IOCTL_TRIGGER can
 be used. 
