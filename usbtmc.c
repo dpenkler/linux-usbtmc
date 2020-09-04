@@ -131,7 +131,6 @@ struct usbtmc_file_data {
 	struct list_head file_elem;
 
 	u32            timeout;
-	u8             srq_byte;
 	atomic_t       srq_asserted;
 	atomic_t       closing;
 	u8             bmTransferAttributes; /* member of DEV_DEP_MSG_IN */
@@ -499,19 +498,6 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_file_data *file_data,
 	dev_dbg(dev, "Enter ioctl_read_stb iin_ep_present: %d\n",
 		data->iin_ep_present);
 
-	spin_lock_irq(&data->dev_lock);
-	srq_asserted = atomic_xchg(&file_data->srq_asserted, srq_asserted);
-	if (srq_asserted) {
-		/* a STB with SRQ is already received */
-		stb = file_data->srq_byte;
-		spin_unlock_irq(&data->dev_lock);
-		rv = put_user(stb, (__u8 __user *)arg);
-		dev_dbg(dev, "stb:0x%02x with srq received %d\n",
-			(unsigned int)stb, rv);
-		return rv;
-	}
-	spin_unlock_irq(&data->dev_lock);
-
 	buffer = kmalloc(8, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
@@ -562,6 +548,10 @@ static int usbtmc488_ioctl_read_stb(struct usbtmc_file_data *file_data,
 	} else {
 		stb = buffer[2];
 	}
+
+	srq_asserted = atomic_xchg(&file_data->srq_asserted, srq_asserted);
+	if (srq_asserted)
+		stb |= 0x40;	/* Set RQS for this fd */
 
 	rv = put_user(stb, (__u8 __user *)arg);
 	dev_dbg(dev, "stb:0x%02x received %d\n", (unsigned int)stb, rv);
@@ -2299,7 +2289,6 @@ static void usbtmc_interrupt(struct urb *urb)
 				file_data = list_entry(elem,
 						       struct usbtmc_file_data,
 						       file_elem);
-				file_data->srq_byte = data->iin_buffer[1];
 				atomic_set(&file_data->srq_asserted, 1);
 			}
 			spin_unlock_irqrestore(&data->dev_lock, flags);
@@ -2316,7 +2305,7 @@ static void usbtmc_interrupt(struct urb *urb)
 	case -EOVERFLOW:
 		dev_err(dev, "overflow with length %d, actual length is %d\n",
 			data->iin_wMaxPacketSize, urb->actual_length);
-		/* fall through */
+		fallthrough;
 	case -ECONNRESET:
 	case -ENOENT:
 	case -ESHUTDOWN:
