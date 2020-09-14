@@ -183,6 +183,14 @@ unsigned int get_stb() {
 	}	return stb;
 }
 
+unsigned int get_srq_stb() {
+	unsigned char stb;
+	if (0 != ioctl(fd,USBTMC488_IOCTL_GET_SRQ_STB,&stb)) {
+		perror("get_srq_stb ioctl failed");
+		exit(1);
+	}	return stb;
+}
+
 void setReg(regT reg, int val) {
 	char buf[32];
 	snprintf(buf,32,"*%s %d\n",regNames[reg],val);
@@ -268,6 +276,56 @@ static int testSTB() {
 	return 0;
 }
 
+static int testSRQ() {
+	unsigned int stb;
+	int i;
+
+        /* Test assertion and clearing of driver level SRQ */
+	printf("\nTesting SRQ with read_stb\n");
+ /* Set Mav mask and clear status */
+	setReg(SRE, SRE_MAV);
+	sscope("*CLS\n");
+	showReg(STB,get_stb()); // clear srq
+	showReg(STB,get_stb()); // and again
+	getTS();
+	for (i=0;i<100;i++) {
+		sscope("*IDN?\n");
+		wait_for_srq();
+		stb = get_stb();
+		if (stb & STB_MAV) {
+			//showReg(STB,stb);
+			rscope(buf,MAX_BL);
+			//printf("Measurement result is: %s\n",buf);
+		} else {
+			printf("SRQ testwith read_stb failed.\n");
+			return 0;
+		}
+	}
+	printf("SRQ with read_stb done: %11.6f " ,getTS());
+	printf("\nTesting SRQ with read_stb\n");
+	printf("get_stb    :"); showReg(STB,get_stb());
+	printf("get_stb    :"); showReg(STB,get_stb());
+	printf("get_srq_stb:");showReg(STB,get_srq_stb());
+	printf("get_srq_stb:");showReg(STB,get_srq_stb());
+	getTS();
+	for (i=0;i<100;i++) {
+		sscope("*IDN?\n");
+		wait_for_srq();
+		stb = get_srq_stb();
+		if (stb & STB_MAV) {
+			//showReg(STB,stb);
+			rscope(buf,MAX_BL);
+			//printf("Measurement result is: %s\n",buf);
+		} else {
+			printf("SRQ test with get_srq_stb failed.\n");
+			return 0;
+		}
+	}
+	printf("SRQ with get_srq_stb done: %11.6f " ,getTS());
+	printf("SRQ test success\n");
+	return 1;
+}
+
 int main () {
   int rv;
   unsigned int tmp,tmp1,ren,timeout;
@@ -330,7 +388,7 @@ int main () {
   sscope(":AUTOSCALE\n");
 
   while (1) {
-    printf("Enter command: [I]nteractive,  [T]est, [S]tb, [Q]uit:");
+    printf("Enter command: [I]nteractive,  [T]est, [S]tb, s[R]q, [Q]uit:");
     fflush(stdout);
 
     len = read(0,buf,MAX_BL);
@@ -405,6 +463,11 @@ int main () {
 	}
       }
       break;
+
+    case 'R':
+    case 'r':
+	    testSRQ();
+	    break;
 
     case 'S':
     case 's':
