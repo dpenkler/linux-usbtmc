@@ -147,6 +147,17 @@ void wait_for_srq(int fd) {
 }
 ```
 
+### USBTMC488_IOCTL_GET_SRQ_STB
+
+This ioctl works the same way as USBTMC488_IOCTL_READ_STB but instead
+of requesting the STB from the device it returns the STB that
+was sent with the device SRQ message. If no other SRQ occurs between two
+successive calls to USBTMC488_IOCTL_GET_SRQ_STB a zero value STB is returned.
+A valid STB will always have the RQS/MSS bit set.
+
+Note: The GET_SRQ_STB ioctl clears the SRQ condition in the driver but
+it has no effect on the status byte of the device.
+
 ### New ioctls to enable and disable local controls on an instrument
 
 These ioctls provide support for the USBTMC-USB488 control requests
