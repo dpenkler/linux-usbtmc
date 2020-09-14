@@ -285,8 +285,8 @@ static int testSRQ() {
  /* Set Mav mask and clear status */
 	setReg(SRE, SRE_MAV);
 	sscope("*CLS\n");
-	showReg(STB,get_stb()); // clear srq
-	showReg(STB,get_stb()); // and again
+	printf("get_stb:"); showReg(STB,get_stb()); // clear srq
+	printf("get_stb:"); showReg(STB,get_stb()); // and again
 	getTS();
 	for (i=0;i<100;i++) {
 		sscope("*IDN?\n");
@@ -301,12 +301,12 @@ static int testSRQ() {
 			return 0;
 		}
 	}
-	printf("SRQ with read_stb done: %11.6f " ,getTS());
-	printf("\nTesting SRQ with read_stb\n");
+	printf("SRQ with read_stb done: %11.6f\n" ,getTS());
+	printf("\nTesting SRQ with get_srq_stb\n");
 	printf("get_stb    :"); showReg(STB,get_stb());
 	printf("get_stb    :"); showReg(STB,get_stb());
-	printf("get_srq_stb:");showReg(STB,get_srq_stb());
-	printf("get_srq_stb:");showReg(STB,get_srq_stb());
+	printf("get_srq_stb:"); showReg(STB,get_srq_stb());
+	printf("get_srq_stb:"); showReg(STB,get_srq_stb());
 	getTS();
 	for (i=0;i<100;i++) {
 		sscope("*IDN?\n");
