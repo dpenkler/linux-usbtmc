@@ -14,7 +14,8 @@ a kernel.org release:
  - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
  - New semantics for USBTMC-USB488 READ_STATUS_BYTE
  - USBTMC_IOCTL_GET_STB
- - USBTMC_IOCTL_GET_SRQ_STB 
+ - USBTMC_IOCTL_GET_SRQ_STB
+ 
 Note: The initial version incorporated into the 14.6.0 kernel release used POLLIN / select readfds for SRQ notifications. This was changed to POLLPRI / select exceptfds in the version incorporated in the 4.19.0 and subsequent kernel release.
  
 All the USBTMC-USB488 features are available in the standard kernel.org releases >= 4.19.0
@@ -85,8 +86,8 @@ the application to poll for the appropriate condition without blocking
 as would  be the case with an "*STB?" query.
 
 USBTMC488_IOCTL_READ_STB always reads the STB from the device and if
-the associated the SRQ condition is asserted in the driver it sets the
-RQS bit in the returned STB.
+the SRQ condition is asserted in the driver it sets the RQS bit in the
+returned STB.
    
 Note: The READ_STATUS_BYTE ioctl clears the SRQ condition in the
 driver but it has no effect on the status byte of the device.
@@ -156,10 +157,10 @@ void wait_for_srq(int fd) {
 
 ### USBTMC_IOCTL_GET_SRQ_STB
 
-This ioctl instead of requesting the STB from the device it returns
-the STB that was sent with the device in the last SRQ message. If no
-other SRQ occurs between two successive calls to
-USBTMC_IOCTL_GET_SRQ_STB an ENOMSG error is signaled.
+This ioctl, instead of requesting the STB from the device, returns the
+STB that was sent by the device in the last SRQ message. If no other
+SRQ occurs between two successive calls to USBTMC_IOCTL_GET_SRQ_STB an
+ENOMSG error is signaled.
 
 Note: The GET_SRQ_STB ioctl clears the SRQ condition in the driver but
 it has no effect on the status byte of the device.
