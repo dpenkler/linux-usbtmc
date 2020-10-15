@@ -12,7 +12,9 @@ The following functions have not yet been incorporated into
 a kernel.org release:
  - module params
  - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
-
+ - New semantics for USBTMC-USB488 READ_STATUS_BYTE
+ - USBTMC_IOCTL_GET_STB
+ - USBTMC_IOCTL_GET_SRQ_STB 
 Note: The initial version incorporated into the 14.6.0 kernel release used POLLIN / select readfds for SRQ notifications. This was changed to POLLPRI / select exceptfds in the version incorporated in the 4.19.0 and subsequent kernel release.
  
 All the USBTMC-USB488 features are available in the standard kernel.org releases >= 4.19.0
@@ -82,8 +84,12 @@ operation always returns even when the instrument is busy, permitting
 the application to poll for the appropriate condition without blocking
 as would  be the case with an "*STB?" query.
 
-Note: The READ_STATUS_BYTE ioctl clears the SRQ condition but it has no effect
-on the status byte of the device.
+USBTMC488_IOCTL_READ_STB always reads the STB from the device and if
+the associated the SRQ condition is asserted in the driver it sets the
+RQS bit in the returned STB.
+   
+Note: The READ_STATUS_BYTE ioctl clears the SRQ condition in the
+driver but it has no effect on the status byte of the device.
 
 
 ### Support for receiving USBTMC-USB488 SRQ notifications with fasync
@@ -111,8 +117,9 @@ In many situations operations on multiple instruments need to be
 synchronized. poll/select provide a convenient way of waiting on a
 number of different instruments and other peripherals simultaneously.
 When the instrument sends an SRQ notification the fd is notified of an
-exceptional condition. To reset the poll/select condition a
-READ_STATUS_BYTE ioctl must be performed.
+exceptional condition. To reset the poll/select condition either a
+USBTMC488_IOCTL_READ_STB or USBTMC_IOCTL_GET_SRQ_STB must be
+performed.
 
 Example with select()
 
@@ -147,16 +154,21 @@ void wait_for_srq(int fd) {
 }
 ```
 
-### USBTMC488_IOCTL_GET_SRQ_STB
+### USBTMC_IOCTL_GET_SRQ_STB
 
-This ioctl works the same way as USBTMC488_IOCTL_READ_STB but instead
-of requesting the STB from the device it returns the STB that
-was sent with the device SRQ message. If no other SRQ occurs between two
-successive calls to USBTMC488_IOCTL_GET_SRQ_STB a zero value STB is returned.
-A valid STB will always have the RQS/MSS bit set.
+This ioctl instead of requesting the STB from the device it returns
+the STB that was sent with the device in the last SRQ message. If no
+other SRQ occurs between two successive calls to
+USBTMC_IOCTL_GET_SRQ_STB an ENOMSG error is signaled.
 
 Note: The GET_SRQ_STB ioctl clears the SRQ condition in the driver but
 it has no effect on the status byte of the device.
+
+### USBTMC_IOCTL_GET_STB
+
+This ioctl always reads the STB from the device and returns the
+unmodified STB in the argument. It does not clear the SRQ condition in
+the driver.
 
 ### New ioctls to enable and disable local controls on an instrument
 
