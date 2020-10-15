@@ -12,7 +12,7 @@ The following functions have not yet been incorporated into
 a kernel.org release:
  - module params
  - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
- - New semantics for USBTMC-USB488 READ_STATUS_BYTE
+ - New semantics for USBTMC488_IOCTL_READ_STB
  - USBTMC_IOCTL_GET_STB
  - USBTMC_IOCTL_GET_SRQ_STB
  
@@ -77,6 +77,7 @@ Individual feature descriptions:
 
 ### ioctl to support the USBTMC-USB488 READ_STATUS_BYTE operation.
 
+USBTMC488_IOCTL_READ_STB
 
 When performing a read on an instrument that is executing
 a function that runs longer than the USB timeout the instrument may
