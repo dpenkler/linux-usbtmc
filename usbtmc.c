@@ -24,6 +24,16 @@
 #include <linux/compat.h>
 #include "tmc.h"
 
+/* Workaround for Linux kernel < 5.4 'fallthrough'*/
+
+#if !defined(fallthrough)
+#if __has_attribute(fallthrough)
+# define fallthrough attribute((fallthrough))
+#else
+# define fallthrough do {} while (0) /* fallthrough */
+#endif
+#endif
+
 /* Increment API VERSION when changing tmc.h with new flags or ioctls
  * or when changing a significant behavior of the driver.
  */
