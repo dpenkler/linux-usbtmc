@@ -12,9 +12,6 @@ The following functions have not yet been incorporated into
 a kernel.org release:
  - module params
  - 32 bit support for IVI USBTMC_IOCTL_CTRL_REQUEST and USBTMC_IOCTL__READ/WRITE on 64 bit platforms.
- - New semantics for USBTMC488_IOCTL_READ_STB
- - USBTMC_IOCTL_GET_STB
- - USBTMC_IOCTL_GET_SRQ_STB
  
 Note: The initial version incorporated into the 14.6.0 kernel release used POLLIN / select readfds for SRQ notifications. This was changed to POLLPRI / select exceptfds in the version incorporated in the 4.19.0 and subsequent kernel release.
  
