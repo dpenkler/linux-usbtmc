@@ -192,9 +192,9 @@ tmc.h include file.
 ### Two new module parameters
 
 ***io_buffer_size*** specifies the size of the buffer in bytes that is
-used for usb bulk transfers. The default size is 2048. The minimum
-size is 512. Values given for this parameter are automatically rounded
-down to the nearest multiple of 4.
+used for usb bulk transfers. The default size is 4096. The minimum
+size is 64. Positive values given for this parameter are automatically rounded
+down to the nearest multiple of 4. If io_buffer_size is zero the wMaxPacketSize for the IN and OUT bulk endpoints are used. This is needed for some Rigol scopes.
 
 ***usb_timeout*** specifies the timeout in milliseconds that is used
 for usb transfers. The default value is 5000 and the minimum value is 500.
