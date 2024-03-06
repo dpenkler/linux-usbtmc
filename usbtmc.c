@@ -1396,7 +1396,7 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 {
 	struct usbtmc_file_data *file_data = filp->private_data;
 	struct usbtmc_device_data *data = file_data->data;
-	struct device *dev;
+	struct device *dev = &data->intf->dev;;
 	const u32 bufsize = (u32)data->wMaxPacketSize;
 	u32 n_characters;
 	u8 *buffer;
