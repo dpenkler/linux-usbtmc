@@ -37,7 +37,7 @@
 /* Increment API VERSION when changing tmc.h with new flags or ioctls
  * or when changing a significant behavior of the driver.
  */
-#define USBTMC_VERSION         "1.4"
+#define USBTMC_VERSION         "1.5"
 #define USBTMC_API_VERSION      (3)
 #define USBTMC_HEADER_SIZE	12
 #define USBTMC_MINOR_BASE	176
