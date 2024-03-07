@@ -104,10 +104,10 @@ struct usbtmc_device_data {
 	u8 bTag_last_read;	/* needed for abort */
 
 	/* packet size of IN bulk ep */
-	u16            bin_wMaxPacketSize;
+	u16            bin_bsiz;
 
 	/* packet size of OUT bulk ep */
-	u16            bout_wMaxPacketSize;
+	u16            bout_bsiz;
 
 	/* data for interrupt in endpoint handling */
 	u8             bNotify1;
@@ -289,13 +289,12 @@ static int usbtmc_ioctl_abort_bulk_in_tag(struct usbtmc_device_data *data,
 					  u8 tag)
 {
 	u8 *buffer;
-	struct device *dev;
+	struct device *dev = &data->intf->dev;
 	int rv;
 	int n;
 	int actual;
 
-	dev = &data->intf->dev;
-	buffer = kmalloc(data->bin_wMaxPacketSize, GFP_KERNEL);
+	buffer = kmalloc(data->bin_bsiz, GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -348,7 +347,7 @@ usbtmc_abort_bulk_in_status:
 	rv = usb_bulk_msg(data->usb_dev,
 			  usb_rcvbulkpipe(data->usb_dev,
 					  data->bulk_in),
-			  buffer, data->bin_wMaxPacketSize,
+			  buffer, data->bin_bsiz,
 			  &actual, 300);
 
 	print_hex_dump_debug("usbtmc ", DUMP_PREFIX_NONE, 16, 1,
@@ -362,7 +361,7 @@ usbtmc_abort_bulk_in_status:
 			goto exit;
 	}
 
-	if (actual == data->bin_wMaxPacketSize)
+	if (actual == data->bin_bsiz)
 		goto usbtmc_abort_bulk_in_status;
 
 	if (n >= USBTMC_MAX_READS_TO_CLEAR_BULK_IN) {
@@ -417,12 +416,11 @@ static int usbtmc_ioctl_abort_bulk_in(struct usbtmc_device_data *data)
 static int usbtmc_ioctl_abort_bulk_out_tag(struct usbtmc_device_data *data,
 					   u8 tag)
 {
-	struct device *dev;
+	struct device *dev = &data->intf->dev;
 	u8 *buffer;
+
 	int rv;
 	int n;
-
-	dev = &data->intf->dev;
 
 	buffer = kmalloc(8, GFP_KERNEL);
 	if (!buffer)
@@ -847,7 +845,7 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 	struct device *dev = &data->intf->dev;
 	u32 done = 0;
 	u32 remaining;
-	const u32 bufsize = (u32)data->bin_wMaxPacketSize;
+	const u32 bufsize = (u32)data->bin_bsiz;
 	int retval = 0;
 	u32 max_transfer_size;
 	unsigned long expire;
@@ -866,8 +864,8 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 		 * packet
 		 */
 		remaining = transfer_size;
-		if ((max_transfer_size % data->bin_wMaxPacketSize) == 0)
-			max_transfer_size += (data->bin_wMaxPacketSize - 1);
+		if ((max_transfer_size % data->bin_bsiz) == 0)
+			max_transfer_size += (data->bin_bsiz - 1);
 	} else {
 		/* round down to bufsize to avoid truncated data left */
 		if (max_transfer_size > bufsize) {
@@ -922,7 +920,7 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 
 	while (bufcount > 0) {
 		u8 *dmabuf = NULL;
-		struct urb *urb = usbtmc_create_urb(data->bin_wMaxPacketSize);
+		struct urb *urb = usbtmc_create_urb(data->bin_bsiz);
 
 		if (!urb) {
 			retval = -ENOMEM;
@@ -1142,19 +1140,16 @@ static ssize_t usbtmc_generic_write(struct usbtmc_file_data *file_data,
 				    u32 flags)
 {
 	struct usbtmc_device_data *data = file_data->data;
-	struct device *dev;
+	struct device *dev = &data->intf->dev;
 	u32 done = 0;
 	u32 remaining;
 	unsigned long expire;
-	const u32 bufsize = data->bout_wMaxPacketSize;
+	const u32 bufsize = data->bout_bsiz;
 	struct urb *urb = NULL;
 	int retval = 0;
 	u32 timeout;
 
 	*transferred = 0;
-
-	/* Get pointer to private data structure */
-	dev = &data->intf->dev;
 
 	dev_dbg(dev, "%s: size=%u flags=0x%X sema=%u\n",
 		__func__, transfer_size, flags,
@@ -1207,7 +1202,7 @@ static ssize_t usbtmc_generic_write(struct usbtmc_file_data *file_data,
 		}
 
 		/* prepare next urb to send */
-		urb = usbtmc_create_urb(data->bout_wMaxPacketSize);
+		urb = usbtmc_create_urb(data->bout_bsiz);
 		if (!urb) {
 			retval = -ENOMEM;
 			up(&file_data->limit_write_sem);
@@ -1401,7 +1396,7 @@ static ssize_t usbtmc_read(struct file *filp, char __user *buf,
 	struct usbtmc_file_data *file_data = filp->private_data;
 	struct usbtmc_device_data *data = file_data->data;
 	struct device *dev = &data->intf->dev;;
-	const u32 bufsize = (u32)data->bin_wMaxPacketSize;
+	const u32 bufsize = (u32)data->bin_bsiz;
 	u32 n_characters;
 	u8 *buffer;
 	int actual;
@@ -1577,7 +1572,7 @@ static ssize_t usbtmc_write(struct file *filp, const char __user *buf,
 		goto exit;
 	}
 
-	urb = usbtmc_create_urb(data->bout_wMaxPacketSize);
+	urb = usbtmc_create_urb(data->bout_bsiz);
 	if (!urb) {
 		retval = -ENOMEM;
 		up(&file_data->limit_write_sem);
@@ -1689,7 +1684,7 @@ static int usbtmc_ioctl_clear(struct usbtmc_file_data *file_data)
 
 	dev_dbg(dev, "Sending INITIATE_CLEAR request\n");
 
-	buffer = kmalloc(max((u16)2, data->bin_wMaxPacketSize), GFP_KERNEL);
+	buffer = kmalloc(max((u16)2, data->bin_bsiz), GFP_KERNEL);
 	if (!buffer)
 		return -ENOMEM;
 
@@ -1746,7 +1741,7 @@ usbtmc_clear_check_status:
 			rv = usb_bulk_msg(data->usb_dev,
 					  usb_rcvbulkpipe(data->usb_dev,
 							  data->bulk_in),
-					  buffer, data->bin_wMaxPacketSize,
+					  buffer, data->bin_bsiz,
 					  &actual, file_data->timeout);
 
 			print_hex_dump_debug("usbtmc ", DUMP_PREFIX_NONE,
@@ -1759,7 +1754,7 @@ usbtmc_clear_check_status:
 					rv);
 				goto exit;
 			}
-		} while ((actual == data->bin_wMaxPacketSize) &&
+		} while ((actual == data->bin_bsiz) &&
 			  (n < USBTMC_MAX_READS_TO_CLEAR_BULK_IN));
 	} else {
 		/* do not stress device with subsequent requests */
@@ -1912,11 +1907,9 @@ static const struct attribute_group capability_attr_grp = {
 
 static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 {
-	struct device *dev;
+	struct device *dev = &data->intf->dev;
 	u8 *buffer;
 	int rv;
-
-	dev = &data->intf->dev;
 
 	buffer = kmalloc(2, GFP_KERNEL);
 	if (!buffer)
@@ -1967,7 +1960,7 @@ static int usbtmc_ioctl_request(struct usbtmc_device_data *data,
 	if (in_compat_syscall())
 		request.data = compat_ptr((compat_uptr_t)r->data);
 
-	if (request.req.wLength > data->bin_wMaxPacketSize)
+	if (request.req.wLength > data->bin_bsiz)
 		return -EMSGSIZE;
 
 	if (request.req.wLength) {
@@ -2402,7 +2395,7 @@ static int usbtmc_probe(struct usb_interface *intf,
 	struct usbtmc_device_data *data;
 	struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
-	int n,bufsz;
+	int n;
 	int retcode;
 
 	dev_dbg(&intf->dev, "%s called\n", __func__);
@@ -2453,10 +2446,8 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 		if (usb_endpoint_is_bulk_in(endpoint)) {
 			data->bulk_in = endpoint->bEndpointAddress;
-			bufsz =	(io_buffer_size) ?
+			data->bin_bsiz = (io_buffer_size) ?
 				io_buffer_size : usb_endpoint_maxp(endpoint);
-			data->bin_wMaxPacketSize = bufsz;
-
 			dev_dbg(&intf->dev, "Found bulk in endpoint at %u\n",
 				data->bulk_in);
 			break;
@@ -2469,9 +2460,8 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 		if (usb_endpoint_is_bulk_out(endpoint)) {
 			data->bulk_out = endpoint->bEndpointAddress;
-			bufsz =	(io_buffer_size) ?
+			data->bout_bsiz = (io_buffer_size) ?
 				io_buffer_size : usb_endpoint_maxp(endpoint);
-			data->bout_wMaxPacketSize = bufsz;
 			dev_dbg(&intf->dev, "Found Bulk out endpoint at %u\n",
 				data->bulk_out);
 			break;
