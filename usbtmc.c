@@ -59,6 +59,9 @@
  */
 #define USBTMC_MAX_READS_TO_CLEAR_BULK_IN	100
 
+/* Minimum packet size for interrupt IN endpoint */
+#define USBTMC_MIN_INT_IN_PACKET_SIZE 2	// 1 byte ID + 1 byte data
+
 static unsigned int io_buffer_size = USBTMC_BUFSIZE;
 module_param(io_buffer_size, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(io_buffer_size, "Size of bulk IO buffer in bytes");
@@ -775,7 +778,7 @@ static struct urb *usbtmc_create_urb(size_t io_buffer_size)
 	if (!urb)
 		return NULL;
 
-	dmabuf = kmalloc(bufsize, GFP_KERNEL);
+	dmabuf = kzalloc(bufsize, GFP_KERNEL);
 	if (!dmabuf) {
 		usb_free_urb(urb);
 		return NULL;
@@ -1681,6 +1684,7 @@ static int usbtmc_ioctl_clear(struct usbtmc_file_data *file_data)
 	int rv;
 	int n;
 	int actual = 0;
+	dev = &data->intf->dev;
 
 	dev_dbg(dev, "Sending INITIATE_CLEAR request\n");
 
@@ -1893,17 +1897,14 @@ capability_attribute(device_capabilities);
 capability_attribute(usb488_interface_capabilities);
 capability_attribute(usb488_device_capabilities);
 
-static struct attribute *capability_attrs[] = {
+static struct attribute *usbtmc_attrs[] = {
 	&dev_attr_interface_capabilities.attr,
 	&dev_attr_device_capabilities.attr,
 	&dev_attr_usb488_interface_capabilities.attr,
 	&dev_attr_usb488_device_capabilities.attr,
 	NULL,
 };
-
-static const struct attribute_group capability_attr_grp = {
-	.attrs = capability_attrs,
-};
+ATTRIBUTE_GROUPS(usbtmc);
 
 static int usbtmc_ioctl_indicator_pulse(struct usbtmc_device_data *data)
 {
@@ -1953,8 +1954,11 @@ static int usbtmc_ioctl_request(struct usbtmc_device_data *data,
 	struct compat_ctrlrequest *r =(struct compat_ctrlrequest *)&request;
 	u8 *buffer = NULL;
 	int rv;
+	unsigned int is_in, pipe;
+	unsigned long res;
 
-	if (copy_from_user(&request, arg, sizeof(struct usbtmc_ctrlrequest)))
+	res = copy_from_user(&request, arg, sizeof(struct usbtmc_ctrlrequest));
+	if (res)
 		return -EFAULT;
 
 	if (in_compat_syscall())
@@ -1962,38 +1966,48 @@ static int usbtmc_ioctl_request(struct usbtmc_device_data *data,
 
 	if (request.req.wLength > data->bin_bsiz)
 		return -EMSGSIZE;
+	if (request.req.wLength == 0)	/* Length-0 requests are never IN */
+		request.req.bRequestType &= ~USB_DIR_IN;
+
+	is_in = request.req.bRequestType & USB_DIR_IN;
 
 	if (request.req.wLength) {
 		buffer = kmalloc(request.req.wLength, GFP_KERNEL);
 		if (!buffer)
 			return -ENOMEM;
 
-		if ((request.req.bRequestType & USB_DIR_IN) == 0) {
+		if (!is_in) {
 			/* Send control data to device */
-			if (copy_from_user(buffer, request.data,
-						request.req.wLength)) {
+			res = copy_from_user(buffer, request.data,
+					     request.req.wLength);
+			if (res) {
 				rv = -EFAULT;
 				goto exit;
 			}
 		}
 	}
 
+	if (is_in)
+		pipe = usb_rcvctrlpipe(data->usb_dev, 0);
+	else
+		pipe = usb_sndctrlpipe(data->usb_dev, 0);
 	rv = usb_control_msg(data->usb_dev,
-			usb_rcvctrlpipe(data->usb_dev, 0),
-			request.req.bRequest,
-			request.req.bRequestType,
-			request.req.wValue,
-			request.req.wIndex,
-			buffer, request.req.wLength, USB_CTRL_GET_TIMEOUT);
+			     pipe,
+			     request.req.bRequest,
+			     request.req.bRequestType,
+			     request.req.wValue,
+			     request.req.wIndex,
+			     buffer, request.req.wLength, USB_CTRL_GET_TIMEOUT);
 
 	if (rv < 0) {
 		dev_err(dev, "%s failed %d\n", __func__, rv);
 		goto exit;
 	}
 
-	if (rv && (request.req.bRequestType & USB_DIR_IN)) {
+	if (rv && is_in) {
 		/* Read control data from device */
-		if (copy_to_user(request.data, buffer, rv))
+		res = copy_to_user(request.data, buffer, rv);
+		if (res)
 			rv = -EFAULT;
 	}
 
@@ -2317,6 +2331,14 @@ static void usbtmc_interrupt(struct urb *urb)
 
 	switch (status) {
 	case 0: /* SUCCESS */
+		/* check for valid length */
+		if (urb->actual_length < USBTMC_MIN_INT_IN_PACKET_SIZE) {
+			dev_warn(dev, "short interrupt packet: %d bytes, min %d required\n",
+				 urb->actual_length,
+				 USBTMC_MIN_INT_IN_PACKET_SIZE);
+			goto exit;
+		}
+
 		/* check for valid STB notification */
 		if (data->iin_buffer[0] > 0x81) {
 			data->bNotify1 = data->iin_buffer[0];
@@ -2359,17 +2381,10 @@ static void usbtmc_interrupt(struct urb *urb)
 		dev_err(dev, "overflow with length %d, actual length is %d\n",
 			data->iin_wMaxPacketSize, urb->actual_length);
 		fallthrough;
-	case -ECONNRESET:
-	case -ENOENT:
-	case -ESHUTDOWN:
-	case -EILSEQ:
-	case -ETIME:
-	case -EPIPE:
+	default:
 		/* urb terminated, clean up */
 		dev_dbg(dev, "urb terminated, status: %d\n", status);
 		return;
-	default:
-		dev_err(dev, "unknown status received: %d\n", status);
 	}
 exit:
 	rv = usb_submit_urb(urb, GFP_ATOMIC);
@@ -2485,11 +2500,17 @@ static int usbtmc_probe(struct usb_interface *intf,
 	retcode = get_capabilities(data);
 	if (retcode)
 		dev_err(&intf->dev, "can't read capabilities\n");
-	else
-		retcode = sysfs_create_group(&intf->dev.kobj,
-					     &capability_attr_grp);
 
 	if (data->iin_ep_present) {
+		if (data->iin_wMaxPacketSize < USBTMC_MIN_INT_IN_PACKET_SIZE) {
+			dev_err(&intf->dev,
+				"Int in endpoint wMaxPacketSize too small: %d, minimum %d required\n",
+				data->iin_wMaxPacketSize,
+				USBTMC_MIN_INT_IN_PACKET_SIZE);
+			retcode = -EINVAL;
+			goto error_register;
+		}
+
 		/* allocate int urb */
 		data->iin_urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (!data->iin_urb) {
@@ -2534,7 +2555,6 @@ static int usbtmc_probe(struct usb_interface *intf,
 	return 0;
 
 error_register:
-	sysfs_remove_group(&intf->dev.kobj, &capability_attr_grp);
 	usbtmc_free_int(data);
 	kref_put(&data->kref, usbtmc_delete);
 	return retcode;
@@ -2546,7 +2566,6 @@ static void usbtmc_disconnect(struct usb_interface *intf)
 	struct list_head *elem;
 
 	usb_deregister_dev(intf, &usbtmc_class);
-	sysfs_remove_group(&intf->dev.kobj, &capability_attr_grp);
 	mutex_lock(&data->io_mutex);
 	data->zombie = 1;
 	wake_up_interruptible_all(&data->waitq);
@@ -2653,9 +2672,11 @@ static struct usb_driver usbtmc_driver = {
 	.resume		= usbtmc_resume,
 	.pre_reset	= usbtmc_pre_reset,
 	.post_reset	= usbtmc_post_reset,
+	.dev_groups	= usbtmc_groups,
 };
 
 module_usb_driver(usbtmc_driver);
 
+MODULE_DESCRIPTION("USB Test & Measurement class driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(USBTMC_VERSION);
