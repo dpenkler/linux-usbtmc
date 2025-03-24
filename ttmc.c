@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
+#include <errno.h>
 //#include <linux/usb/tmc.h>
 #define __user
 #include "tmc.h"
@@ -169,7 +170,7 @@ int rscope(char *buf, int max_len) {
 	if (len < 0) {
 	  perror("failed to read from scope");
 	  ioctl(fd,USBTMC_IOCTL_CLEAR);
-	  return 0;
+	  len = 0;
 	}
 	buf[len] = 0; /* zero terminate */
 	return len;
@@ -180,15 +181,21 @@ unsigned int get_stb() {
 	if (0 != ioctl(fd,USBTMC488_IOCTL_READ_STB,&stb)) {
 		perror("stb ioctl failed");
 		exit(1);
-	}	return stb;
+	}
+	return stb;
 }
 
 unsigned int get_srq_stb() {
 	unsigned char stb;
-	if (0 != ioctl(fd,USBTMC488_IOCTL_GET_SRQ_STB,&stb)) {
-		perror("get_srq_stb ioctl failed");
-		exit(1);
-	}	return stb;
+	if (0 != ioctl(fd,USBTMC_IOCTL_GET_SRQ_STB,&stb)) {
+		if (errno == ENOMSG) {
+			stb = 0;
+		} else {
+			perror("get_srq_stb ioctl failed");
+			exit(1);
+		}
+	}
+	return stb;
 }
 
 void setReg(regT reg, int val) {
@@ -224,6 +231,13 @@ static int showReg(regT reg, unsigned char val) {
 	}
 	printf("\n");
 	return val;
+}
+
+void showTER() {
+	char buf[32];
+	sscope(":TER?\n");
+	rscope(buf,32);
+	printf("TER=%s",buf);
 }
 
 /* Wait for SRQ using poll() */
@@ -482,11 +496,17 @@ int main () {
       { unsigned char eom = 0;
 	int res;
 	printf("\nTesting eom\n");
+	/* Set OPC mask and clear status */
+	sscope("*CLS\n");
+	setReg(ESE, ESR_OPC); /* Set ESB in STB on OPC */
+	setReg(SRE, SRE_ESB); // enable srq on event status reg
+	showReg(STB,get_stb()); // clear srq
 	ioctl(fd,USBTMC_IOCTL_EOM_ENABLE,&eom);
 	sscope(":MEAS:FREQ?;VR");
 	eom = 1;
 	ioctl(fd,USBTMC_IOCTL_EOM_ENABLE,&eom);
-	sscope("MS?;VPP? CHAN1\n");
+	sscope("MS?;VPP? CHAN1;*OPC\n");
+	wait_for_srq();
 	res = rscope(buf,MAX_BL);
 	if (res < 0) printf("eom failed\n");
 	else printf("eom success, res: %s",buf);
@@ -494,34 +514,30 @@ int main () {
 
     ttermc:
       { struct usbtmc_termchar termc;
-	int fdtc,fdtce;
 	int part=1;
-	unsigned char old_termchar,old_termce,termchar,termce;
-	int res,len,old_termc_enabled,termc_enabled;
+	unsigned char old_termchar;
+	int res,len,old_termc_enabled;
 	printf("\nTesting TermChar\n");
-	fdtc  = open("/sys/class/usbmisc/usbtmc0/device/TermChar",O_RDONLY);
-	fdtce = open("/sys/class/usbmisc/usbtmc0/device/TermCharEnabled",O_RDONLY);
-	read(fdtc,&old_termchar,1);
-	read(fdtce,&old_termce,1);
-	old_termc_enabled =  (old_termce == '0') ? 0 : 1;
+
+	old_termchar = '\n';
+	old_termc_enabled = 0;
 	printf("Old: TermChar 0x%02x, TermCharEnabled %d\n",
 	       (int)old_termchar,old_termc_enabled);
 	termc.term_char = ';';
 	termc.term_char_enabled = 1;
-	ioctl(fd,USBTMC_IOCTL_CONFIG_TERMCHAR,&termc);
-	lseek(fdtc,0,SEEK_SET);
-	lseek(fdtce,0,SEEK_SET);
-	read(fdtc,&termchar,1);
-	read(fdtce,&termce,1);
-	close(fdtc);
-	close(fdtce);
-	termc_enabled =  (termce == '0') ? 0 : 1;
-	printf("New: TermChar x0%02x, TermCharEnabled %d\n",
-		       (int)termchar,termc_enabled);
-	setReg(SRE, SRE_MAV);
+	res = ioctl(fd,USBTMC_IOCTL_CONFIG_TERMCHAR,&termc);
+	if (res < 0) {
+	  perror("setting termchar config failed");
+	  goto ttermc_out;
+	}
+	printf("New: TermChar 0x%02x, TermCharEnabled %d\n",
+	       (int)termc.term_char,termc.term_char_enabled);
+	setReg(ESE, ESR_OPC); /* Set ESB in STB on OPC */
+	setReg(SRE, SRE_ESB); // enable srq on event status reg
+	showReg(STB,get_stb()); // clear srq
 	sscope("*CLS\n");
-	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
-	sleep(1);
+	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1;*OPC\n");
+	wait_for_srq();
 	while (STB_MAV & get_stb()) {
 	  if (0 < (len = rscope(buf,MAX_BL)))
 	    printf("termc part %d is %s\n",part++, buf);
@@ -531,19 +547,10 @@ int main () {
 	termc.term_char = old_termchar;
 	termc.term_char_enabled = old_termc_enabled;
 	res = ioctl(fd,USBTMC_IOCTL_CONFIG_TERMCHAR,&termc);
-	if (res < 0) {
-	  perror("config termchar");
-	  res = 0;
-	} else {
-	  lseek(fdtc,0,SEEK_SET);
-	  lseek(fdtce,0,SEEK_SET);
-	  read(fdtc,&termchar,1);
-	  read(fdtce,&termce,1);
-	  close(fdtc);
-	  close(fdtce);
-	  res = (termchar==old_termchar) && (termce==old_termce);
-	}
-	printf("TermChar test %s\n",(len >= 0) ? "succeeded":"failed");
+	if (res < 0)
+	  perror("restore termchar config failed");
+      ttermc_out:
+	  printf("TermChar test %s\n",((res >= 0) && (len >= 0)) ? "succeeded":"failed");
 	if (part <=2 )
 	  printf("However expected number of parts to be greater than 1\n");
       }
@@ -592,13 +599,14 @@ int main () {
     tsel:
       memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
       printf("\nTesting select\n");
-      /* Set Mav mask and clear status */
-      setReg(SRE, SRE_MAV);
+      /* Set OPC mask and clear status */
       sscope("*CLS\n");
-      sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1\n");
+      setReg(ESE, ESR_OPC); /* Set ESB in STB on OPC */
+      setReg(SRE, SRE_ESB); // enable srq on event status reg
       showReg(STB,get_stb()); // clear srq
+      sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1;*OPC\n");
 
-      /* wait here for MAV */
+      /* wait here for ESB srq */
 
       FD_SET(fd,&fdsel[2]);
       n = select(fd+1,
@@ -632,7 +640,8 @@ int main () {
       sscope(":TIM:MODE MAIN\n");
       sscope(":WAV:SOURCE CHAN1\n");
       /* enable OPC */
-      sscope("*ESE 1\n"); // set operation complete in the event status enable reg
+      sscope("*CLS\n");
+      setReg(ESE, ESR_OPC); /* Set ESB in STB on OPC */
       setReg(SRE, SRE_ESB); // enable srq on event status reg
       showReg(STB, get_stb()); // clear srq
       flag = 0;
@@ -655,18 +664,18 @@ int main () {
       setReg(SRE, SRE_TRG); // enable SRQ on trigger
       sscope(":DIG CHAN1\n");
       showReg(STB,get_stb());
-
+//      showTER();
       if (ioctl(fd,USBTMC488_IOCTL_TRIGGER)) {
 	perror("trigger ioctl failed");
 	exit(1);
       }
 
       wait_for_srq();
-      stb = get_stb();
+      stb = get_srq_stb();
       showReg(STB, stb);
-      printf("trigger ioctl %s\n", (stb & STB_TRG) ? "success" : "failure");
+      printf("trigger ioctl test %s\n", (stb & STB_TRG) ? "success" : "failure");
       sscope("*CLS\n");
-      sscope(":RUN;:AUTOSCALE\n");
+      sscope(":RUN\n");
       break;
     case 'Q':
     case 'q':
