@@ -123,7 +123,7 @@ performed.
 Example with select()
 
 ```C
-  FD_SET(fd,&fdsel[0]);
+  FD_SET(fd,&fdsel[2]);
   n = select(fd+1,
 	  (fd_set *)(&fdsel[0]),
 	  (fd_set *)(&fdsel[1]),
