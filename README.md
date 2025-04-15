@@ -153,6 +153,29 @@ void wait_for_srq(int fd) {
 }
 ```
 
+### An ioctl to wait for an SRQ notification
+
+This ioctl offers an alternative way to wait for a service request notification.
+Unlike with poll and select the ioctl does not return when asynchronous operations fail.
+
+```C
+static int wait_for_srq(int fd, unsigned int timeout) {
+	return ioctl(fd, USBTMC488_IOCTL_WAIT_SRQ, &timeout);
+}
+```
+
+The timeout parameter is units of milliseconds.
+If timeout is 0 the call returns immediately.
+
+The ioctl returns 0 when an SRQ is received
+else it returns -1 with errno set:
+```
+errno = ETIMEDOUT when timeout (in ms) is elapsed.
+errno = ENODEV when file handle is closed or device disconnected
+errno = EFAULT when timeout argument address is out of bounds
+errno = EINVAL when timeout > INT_MAX
+```
+
 ### USBTMC_IOCTL_GET_SRQ_STB
 
 This ioctl, instead of requesting the STB from the device, returns the
@@ -171,8 +194,31 @@ the driver.
 
 ### New ioctls to enable and disable local controls on an instrument
 
-These ioctls provide support for the USBTMC-USB488 control requests
-for REN_CONTROL, GO_TO_LOCAL and LOCAL_LOCKOUT
+These ioctls provides the ability to enable or disable local controls on a device
+```C
+static int remote_enable(int fd) {
+usigned char enable = 1;
+
+return ioctl(fd, USBTMC488_IOCTL_REN_CONTROL, &enable);
+}
+
+```C
+static int remote_disable(int fd) {
+usigned char disable = 0;
+
+return ioctl(fd, USBTMC488_IOCTL_REN_CONTROL, &disable);
+}
+```
+```
+
+Enable local lockout:
+```C
+ioctl(fd, USBTMC488_IOCTL_LOCAL_LOCKOUT);
+```
+Return to local:
+```C
+ioctl(fd, USBTMC488_IOCTL_GOTO_LOCAL);
+```
 
 ### ioctl to cause a device to trigger
 
@@ -197,7 +243,8 @@ size is 64. Positive values given for this parameter are automatically rounded
 down to the nearest multiple of 4. If io_buffer_size is zero the wMaxPacketSize for the IN and OUT bulk endpoints are used. This is needed for some Rigol scopes.
 
 ***usb_timeout*** specifies the timeout in milliseconds that is used
-for usb transfers. The default value is 5000 and the minimum value is 500.
+for usb transfers. The default value is 5000, the minimum value is 100 and
+the maximum value is 0x7fffffff (i.e. INT_MAX).
 
 To set the parameters
 ```
@@ -213,10 +260,14 @@ insmod usbtmc.ko io_buffer_size=262144
 Separate ioctl's to set and get the usb timeout value for a device.
 By default the timeout is set to 5000 milliseconds unless changed by
 the ***usb_timeout*** module parameter.
+```C
+	unsigned int timeout;
+....
+	ioctl(fd, USBTMC_IOCTL_SET_TIMEOUT, &timeout)
+````
+will return -1 with error = EINVAL if timeout < 100 or if timeout > 0x7fffffff i.e. timeout > INT_MAX.
 
-USBTMC_IOCTL_SET_TIMEOUT will return with error EINVAL if timeout < 500
-
-Example
+Example set timeout to 1000 milliseconds
 
 ```C
 	unsigned int timeout, oldtimeout;
