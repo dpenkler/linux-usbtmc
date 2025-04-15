@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 //#include <linux/usb/tmc.h>
 #define __user
 #include "tmc.h"
@@ -241,11 +242,15 @@ void showTER() {
 }
 
 /* Wait for SRQ using poll() */
-void wait_for_srq() {
+void wait_for_srq_poll() {
 	struct pollfd pfd;
 	pfd.fd = fd;
 	pfd.events = POLLPRI;
 	poll(&pfd,1,-1);
+}
+
+static int wait_for_srq(unsigned int timeout) {
+	return ioctl(fd, USBTMC488_IOCTL_WAIT_SRQ, &timeout);
 }
 
 void wait_for_user() {
@@ -289,6 +294,70 @@ static int testSTB() {
 	printf("STB test failed.\n");
 	return 0;
 }
+static int test_wait_for_srq() {
+	unsigned int stb;
+	int ret;
+	double delay;
+	printf("\nTesting wait_for_srq ioctl\n");
+ /* Set Mav mask and clear status */
+	setReg(SRE, SRE_MAV);
+	sscope("*CLS\n");
+        showReg(STB,get_stb()); // clear srq if any
+	ret = wait_for_srq(0);
+	if (ret != -1 && errno != ETIMEDOUT) {
+		printf("Expected timeout, wait_for_srq failed\n");
+		return 0;
+	}
+	getTS();
+	ret = wait_for_srq(1000);
+	delay = getTS();
+	if (ret != -1 && errno != ETIMEDOUT) {
+		printf("Expected timeout 1s, wait_for_srq failed\n");
+		return 0;
+	}
+	if (delay < .9 || delay > 1.1) {
+		printf("Expected timeout of 1s, got %f ret %d wait_for_srq failed\n",
+		       delay, ret);
+		return 0;
+	}
+	sscope("*IDN?\n");
+	ret = wait_for_srq(500);
+	if (!ret) {
+		stb = get_srq_stb();
+		if (stb & STB_MAV) {
+			rscope(buf,MAX_BL);
+		} else {
+			printf("wait_for_srq failed.\n");
+			return 0;
+		}
+	} else {
+		printf("Unexpected return %d errno %d wait_for_srq_failed\n",
+		       ret, errno);
+		return 0;
+	}
+	sscope("*IDN?\n");
+	ret = wait_for_srq(0x80000000U);
+	if (ret < 0 && errno == EINVAL) {
+		printf("Check for timeout > INT_MAX passed\n");
+	} else {
+		printf("Unexpected error, ret %d errno %d  wait_for_srq failed\n", ret, errno);
+		return 0;
+	}
+	ret = wait_for_srq(0x7fffffffU);
+	if (ret) {
+		printf("Unexpected error, ret %d errno %d  wait_for_srq failed\n", ret, errno);
+		return 0;
+	}
+	stb = get_srq_stb();
+	if (stb & STB_MAV) {
+			rscope(buf,MAX_BL);
+			printf("Wait_for_srq Succeeded\n");
+	} else {
+			printf("wait_for_srq failed.\n");
+			return 0;
+	}
+	return 1;
+}
 
 static int testSRQ() {
 	unsigned int stb;
@@ -304,7 +373,7 @@ static int testSRQ() {
 	getTS();
 	for (i=0;i<100;i++) {
 		sscope("*IDN?\n");
-		wait_for_srq();
+		wait_for_srq_poll();
 		stb = get_stb();
 		if (stb & STB_MAV) {
 			//showReg(STB,stb);
@@ -324,7 +393,7 @@ static int testSRQ() {
 	getTS();
 	for (i=0;i<100;i++) {
 		sscope("*IDN?\n");
-		wait_for_srq();
+		wait_for_srq_poll();
 		stb = get_srq_stb();
 		if (stb & STB_MAV) {
 			//showReg(STB,stb);
@@ -343,6 +412,7 @@ static int testSRQ() {
 int main () {
   int rv;
   unsigned int tmp,tmp1,ren,timeout;
+  struct timeval sel_timeout;
   unsigned char caps;
   int len,n;
   unsigned char stb;
@@ -378,16 +448,25 @@ int main () {
 	  exit(1);
   }
   printf("usb timeout is %ums\n",timeout);
-  if (timeout != 1000) {
-	  timeout = 1000;
-	  printf("resetting timeout...");
-	  if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
-		  perror("Set timeout ioctl failed");
-		  exit(1);
-	  }
-	  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
-	  printf(" timeout is now %ums\n",timeout);
+
+  timeout = 0x80000000U;
+  printf("Trying timeout > INT_MAX...\n");
+  if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
+	  printf("... failed %s\n",strerror(errno));
   }
+  timeout = 0;
+  printf("Trying timeout 0 ...\n");
+  if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
+	  printf("... failed %s\n",strerror(errno));
+  }
+  timeout = 5000;
+  printf("Trying timeout 5000 ...\n");
+  if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
+	  printf("... failed %s\n",strerror(errno));
+	  exit(1);
+  }
+  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
+	  printf(" timeout is now %ums\n",timeout);
 
   /* Get and display instrument capabilities */
   if (0 != ioctl(fd,USBTMC488_IOCTL_GET_CAPS,&caps)) {
@@ -413,9 +492,10 @@ int main () {
     case 'I':
     case 'i':
       {
-	int prompt = 1;
+        int prompt = 1;
 	int srun   = 1;
 	int esr;
+	int had_prompt = 0;
 	/* Report all errors */
 	setReg(ESE, ESR_CME | ESR_EXE | ESR_DDE | ESR_QYE);
 	setReg(SRE, SRE_MAV |  SRE_ESB);
@@ -430,20 +510,28 @@ int main () {
 			printf("Enter string to send: ");
 			fflush(stdout);
 			prompt = 0;
+			had_prompt = 1;
 		}
 
 		memset(fdsel,0,sizeof(fdsel)); /* zero out select mask */
 		get_stb(); // reset SRQ condition
+		sel_timeout.tv_sec = 0;
+		sel_timeout.tv_usec = 500000;
 		FD_SET(0,&fdsel[0]);
 		FD_SET(fd,&fdsel[2]);
 		n = select(fd+1,
 			(fd_set *)(&fdsel[0]),
 			(fd_set *)(&fdsel[1]),
 			(fd_set *)(&fdsel[2]),
-			NULL);
-		if (n <= 0) {
+			&sel_timeout);
+		if (n < 0) {
 			perror("select\n");
 			break;
+		}
+
+		if (!n && !had_prompt) {
+			prompt = 1;
+			continue;
 		}
 
 		if (FD_ISSET(fd,&fdsel[2])) {
@@ -465,6 +553,7 @@ int main () {
 
 		if (FD_ISSET(0,&fdsel[0])) {
 			len = read(0,buf,MAX_BL-1);
+			had_prompt = 0;
 			if (len > 0) {
 				buf[len] = 0;
 				sscope(buf);
@@ -506,7 +595,7 @@ int main () {
 	eom = 1;
 	ioctl(fd,USBTMC_IOCTL_EOM_ENABLE,&eom);
 	sscope("MS?;VPP? CHAN1;*OPC\n");
-	wait_for_srq();
+	wait_for_srq_poll();
 	res = rscope(buf,MAX_BL);
 	if (res < 0) printf("eom failed\n");
 	else printf("eom success, res: %s",buf);
@@ -537,7 +626,7 @@ int main () {
 	showReg(STB,get_stb()); // clear srq
 	sscope("*CLS\n");
 	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1;*OPC\n");
-	wait_for_srq();
+	wait_for_srq_poll();
 	while (STB_MAV & get_stb()) {
 	  if (0 < (len = rscope(buf,MAX_BL)))
 	    printf("termc part %d is %s\n",part++, buf);
@@ -670,10 +759,15 @@ int main () {
 	exit(1);
       }
 
-      wait_for_srq();
+      wait_for_srq_poll();
       stb = get_srq_stb();
       showReg(STB, stb);
       printf("trigger ioctl test %s\n", (stb & STB_TRG) ? "success" : "failure");
+      sscope(":TRIG:SOURCE CHAN1\n");
+
+    twfsrq:
+      test_wait_for_srq();
+
       sscope("*CLS\n");
       sscope(":RUN\n");
       break;
