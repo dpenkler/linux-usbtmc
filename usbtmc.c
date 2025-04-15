@@ -538,7 +538,7 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 		rv = wait_event_interruptible_timeout(
 			data->waitq,
 			atomic_read(&data->iin_data_valid) != 0,
-			file_data->timeout);
+			msecs_to_jiffies(file_data->timeout));
 		if (rv < 0) {
 			dev_dbg(dev, "wait interrupted %d\n", rv);
 			goto exit;
@@ -637,6 +637,9 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 
 	if (get_user(timeout, arg))
 		return -EFAULT;
+
+	if (timeout > (unsigned int)INT_MAX)
+		return -EINVAL;
 
 	expire = msecs_to_jiffies(timeout);
 
@@ -2045,6 +2048,8 @@ static int usbtmc_ioctl_set_timeout(struct usbtmc_file_data *file_data,
 	 */
 	if (timeout < USBTMC_MIN_TIMEOUT)
 		return -EINVAL;
+	if (timeout > (unsigned int)INT_MAX)
+		return -EINVAL;
 
 	file_data->timeout = timeout;
 
@@ -2427,6 +2432,8 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 	if (usb_timeout < USBTMC_MIN_TIMEOUT)
 		usb_timeout = USBTMC_MIN_TIMEOUT;
+	else if (usb_timeout > (unsigned int)INT_MAX)
+		usb_timeout = INT_MAX;
 	pr_info("\tusb_timeout = %d\n", usb_timeout);
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
