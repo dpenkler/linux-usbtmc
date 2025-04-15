@@ -202,13 +202,11 @@ usigned char enable = 1;
 return ioctl(fd, USBTMC488_IOCTL_REN_CONTROL, &enable);
 }
 
-```C
 static int remote_disable(int fd) {
 usigned char disable = 0;
 
 return ioctl(fd, USBTMC488_IOCTL_REN_CONTROL, &disable);
 }
-```
 ```
 
 Enable local lockout:
