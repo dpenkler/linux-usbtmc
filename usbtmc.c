@@ -37,7 +37,7 @@
 /* Increment API VERSION when changing tmc.h with new flags or ioctls
  * or when changing a significant behavior of the driver.
  */
-#define USBTMC_VERSION         "1.5"
+#define USBTMC_VERSION         "1.6"
 #define USBTMC_API_VERSION      (3)
 #define USBTMC_HEADER_SIZE	12
 #define USBTMC_MINOR_BASE	176
@@ -506,6 +506,7 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 	u8 *buffer;
 	u8 tag;
 	int rv;
+	long retval; /* need long here for wait_event_interruptible_timeout() */
 
 	dev_dbg(dev, "Enter ioctl_read_stb iin_ep_present: %d\n",
 		data->iin_ep_present);
@@ -535,16 +536,17 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 	}
 
 	if (data->iin_ep_present) {
-		rv = wait_event_interruptible_timeout(
+		retval = wait_event_interruptible_timeout(
 			data->waitq,
 			atomic_read(&data->iin_data_valid) != 0,
 			msecs_to_jiffies(file_data->timeout));
-		if (rv < 0) {
-			dev_dbg(dev, "wait interrupted %d\n", rv);
+		if (retval < 0) {
+			dev_dbg(dev, "wait interrupted\n");
+			rv = -EINTR;
 			goto exit;
 		}
 
-		if (rv == 0) {
+		if (retval == 0) {
 			dev_dbg(dev, "wait timed out\n");
 			rv = -ETIMEDOUT;
 			goto exit;
@@ -626,9 +628,9 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 {
 	struct usbtmc_device_data *data = file_data->data;
 	struct device *dev = &data->intf->dev;
-	int rv;
 	u32 timeout;
 	unsigned long expire;
+	long retval; /* remaining jiffies can be > INT_MAX */
 
 	if (!data->iin_ep_present) {
 		dev_dbg(dev, "no interrupt endpoint present\n");
@@ -638,32 +640,30 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 	if (get_user(timeout, arg))
 		return -EFAULT;
 
-	if (timeout > (unsigned int)INT_MAX)
-		return -EINVAL;
-
 	expire = msecs_to_jiffies(timeout);
 
 	mutex_unlock(&data->io_mutex);
 
-	rv = wait_event_interruptible_timeout(
-			data->waitq,
-			atomic_read(&file_data->srq_asserted) != 0 ||
-			atomic_read(&file_data->closing),
-			expire);
+	retval = wait_event_interruptible_timeout(
+		data->waitq,
+		atomic_read(&file_data->srq_asserted) != 0 ||
+		atomic_read(&file_data->closing),
+		expire);
 
 	mutex_lock(&data->io_mutex);
 
 	/* Note! disconnect or close could be called in the meantime */
-	if (atomic_read(&file_data->closing) || data->zombie)
-		rv = -ENODEV;
-
-	if (rv < 0) {
-		/* dev can be invalid now! */
-		pr_debug("%s - wait interrupted %d\n", __func__, rv);
-		return rv;
+	if (atomic_read(&file_data->closing) || data->zombie) {
+		pr_debug("%s - wait dev went away\n", __func__);
+		return -ENODEV;
 	}
 
-	if (rv == 0) {
+	if (retval < 0) {
+		dev_dbg(dev, "%s - wait interrupted\n", __func__);
+		return -EINTR;
+	}
+
+	if (retval == 0) {
 		dev_dbg(dev, "%s - wait timed out\n", __func__);
 		return -ETIMEDOUT;
 	}
@@ -855,6 +855,7 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 	int retval = 0;
 	u32 max_transfer_size;
 	unsigned long expire;
+	long wretval;
 	int bufcount = 1;
 	int again = 0;
 
@@ -969,17 +970,19 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 		if (!(flags & USBTMC_FLAG_ASYNC)) {
 			dev_dbg(dev, "%s: before wait time %lu\n",
 				__func__, expire);
-			retval = wait_event_interruptible_timeout(
+			wretval = wait_event_interruptible_timeout(
 				file_data->wait_bulk_in,
 				usbtmc_do_transfer(file_data),
 				expire);
 
-			dev_dbg(dev, "%s: wait returned %d\n",
-				__func__, retval);
+			dev_dbg(dev, "%s: wait returned %ld\n",
+				__func__, wretval);
 
-			if (retval <= 0) {
-				if (retval == 0)
+			if (wretval <= 0) {
+				if (wretval == 0)
 					retval = -ETIMEDOUT;
+				else
+					retval = -EINTR;
 				goto error;
 			}
 		}
@@ -2048,8 +2051,6 @@ static int usbtmc_ioctl_set_timeout(struct usbtmc_file_data *file_data,
 	 */
 	if (timeout < USBTMC_MIN_TIMEOUT)
 		return -EINVAL;
-	if (timeout > (unsigned int)INT_MAX)
-		return -EINVAL;
 
 	file_data->timeout = timeout;
 
@@ -2432,8 +2433,6 @@ static int usbtmc_probe(struct usb_interface *intf,
 
 	if (usb_timeout < USBTMC_MIN_TIMEOUT)
 		usb_timeout = USBTMC_MIN_TIMEOUT;
-	else if (usb_timeout > (unsigned int)INT_MAX)
-		usb_timeout = INT_MAX;
 	pr_info("\tusb_timeout = %d\n", usb_timeout);
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
