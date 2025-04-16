@@ -173,7 +173,6 @@ else it returns -1 with errno set:
 errno = ETIMEDOUT when timeout (in ms) is elapsed.
 errno = ENODEV when file handle is closed or device disconnected
 errno = EFAULT when timeout argument address is out of bounds
-errno = EINVAL when timeout > INT_MAX
 ```
 
 ### USBTMC_IOCTL_GET_SRQ_STB
@@ -241,8 +240,7 @@ size is 64. Positive values given for this parameter are automatically rounded
 down to the nearest multiple of 4. If io_buffer_size is zero the wMaxPacketSize for the IN and OUT bulk endpoints are used. This is needed for some Rigol scopes.
 
 ***usb_timeout*** specifies the timeout in milliseconds that is used
-for usb transfers. The default value is 5000, the minimum value is 100 and
-the maximum value is 0x7fffffff (i.e. INT_MAX).
+for usb transfers. The default value is 5000, the minimum value is 100.
 
 To set the parameters
 ```
@@ -263,7 +261,7 @@ the ***usb_timeout*** module parameter.
 ....
 	ioctl(fd, USBTMC_IOCTL_SET_TIMEOUT, &timeout)
 ````
-will return -1 with error = EINVAL if timeout < 100 or if timeout > 0x7fffffff i.e. timeout > INT_MAX.
+will return -1 with error = EINVAL if timeout < 100.
 
 Example set timeout to 1000 milliseconds
 
