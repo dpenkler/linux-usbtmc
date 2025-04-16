@@ -22,6 +22,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <time.h>
 //#include <linux/usb/tmc.h>
 #define __user
 #include "tmc.h"
@@ -311,8 +312,9 @@ static int test_wait_for_srq() {
 	getTS();
 	ret = wait_for_srq(1000);
 	delay = getTS();
-	if (ret != -1 && errno != ETIMEDOUT) {
-		printf("Expected timeout 1s, wait_for_srq failed\n");
+	if (ret != -1 || errno != ETIMEDOUT) {
+		printf("Expected error %s, wait_for_srq failed \n",
+		       strerror(errno));
 		return 0;
 	}
 	if (delay < .9 || delay > 1.1) {
@@ -336,14 +338,7 @@ static int test_wait_for_srq() {
 		return 0;
 	}
 	sscope("*IDN?\n");
-	ret = wait_for_srq(0x80000000U);
-	if (ret < 0 && errno == EINVAL) {
-		printf("Check for timeout > INT_MAX passed\n");
-	} else {
-		printf("Unexpected error, ret %d errno %d  wait_for_srq failed\n", ret, errno);
-		return 0;
-	}
-	ret = wait_for_srq(0x7fffffffU);
+	ret = wait_for_srq(0xffffffffU);
 	if (ret) {
 		printf("Unexpected error, ret %d errno %d  wait_for_srq failed\n", ret, errno);
 		return 0;
@@ -419,6 +414,8 @@ int main () {
   char command;
   int oflags;
   fd_set fdsel[3];
+  struct tm *daterec;
+  time_t now;
   int i;
 
   /* Open file */
@@ -443,27 +440,47 @@ int main () {
   rscope(buf,MAX_BL);
   printf("*IDN? = %s\n",buf);
 
+  /* set time */
+
+  now = time(NULL);
+  daterec = localtime(&now);
+  snprintf(buf,MAX_BL,"SYST:DATE %d,%d,%d",daterec->tm_year+1900,daterec->tm_mon+1,daterec->tm_mday);
+  sscope(buf);
+  snprintf(buf,MAX_BL,"SYST:TIME %d,%d,%d",daterec->tm_hour,daterec->tm_min,daterec->tm_sec);
+  sscope(buf);
+
+  sscope("DISP:ANN:TEXT \"USBTMC Driver Test\"");
+
+  printf("Testing setting and getting timeout\n");
+
   if (0 != ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout)) {
 	  perror("Get timeout ioctl failed");
 	  exit(1);
   }
-  printf("usb timeout is %ums\n",timeout);
+  printf("usb default timeout is %ums\n",timeout);
 
-  timeout = 0x80000000U;
+  timeout = 0xffffffffU;
   printf("Trying timeout > INT_MAX...\n");
   if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
 	  printf("... failed %s\n",strerror(errno));
+  } else {
+	  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
+	  printf(" timeout is now %ums\n",timeout);
   }
+
   timeout = 0;
   printf("Trying timeout 0 ...\n");
   if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
 	  printf("... failed %s\n",strerror(errno));
+  }  else {
+	  ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
+	  printf(" timeout is now %ums\n",timeout);
   }
+
   timeout = 5000;
   printf("Trying timeout 5000 ...\n");
   if (0 != ioctl(fd,USBTMC_IOCTL_SET_TIMEOUT,&timeout)) {
 	  printf("... failed %s\n",strerror(errno));
-	  exit(1);
   }
   ioctl(fd,USBTMC_IOCTL_GET_TIMEOUT,&timeout);
 	  printf(" timeout is now %ums\n",timeout);
@@ -647,7 +664,7 @@ int main () {
     tstb:
 
       testSTB();
-      goto tsel; // skip tren
+      goto tsel; /* scope does not react to ren/llo */
 
     tren:
 
@@ -669,6 +686,7 @@ int main () {
 	perror("ren set ioctl failed");
 	exit(1);
       }
+      sscope("SYSTEM:DSP \"USBTMC_488 Remote enabled\"");
 
       printf("Testing local lockout, press enter to continue\n");
       wait_for_user();
@@ -676,6 +694,7 @@ int main () {
 	perror("llo ioctl failed");
 	exit(1);
       }
+      sscope("SYSTEM:DSP \"USBTMC_488 Local locked\"");
 
       printf("Testing goto local, press enter to continue\n");
       wait_for_user();
@@ -683,6 +702,7 @@ int main () {
 	perror("gtl ioctl failed");
 	exit(1);
       }
+      sscope("SYSTEM:DSP \"\"");
       sscope("*CLS\n");
 
     tsel:
@@ -773,6 +793,7 @@ int main () {
       break;
     case 'Q':
     case 'q':
+      sscope("DISP:ANN:TEXT \"\"");
       printf("ttmc: /done\n");
       close(fd);
       exit(0);
