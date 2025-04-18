@@ -295,7 +295,7 @@ Example
 
 ```
 
-### ioctl to configure term_char and termc_har_enable
+### ioctl to configure term_char and term_char_enable
 
 Allows enabling/disabling of terminating a read on reception of term_char.
 By default term_char_enable is false and term_char is '\n' (0x0a).
