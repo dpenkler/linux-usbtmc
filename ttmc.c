@@ -618,6 +618,27 @@ int main () {
 	else printf("eom success, res: %s",buf);
       }
 
+    teom_in:
+      { unsigned char attr=0;
+        int len;
+	printf("\nTesting eom on input\n");
+	sscope("*CLS\n");
+	setReg(ESE, 0);
+	setReg(SRE, 0);
+	sscope("*IDN?\n");
+	while (!attr) {
+		len = rscope(buf, 4);
+		if (len < 0) {
+			printf("teom_in failed\n");
+			break;
+		}
+		buf[len] = 0;
+		printf(buf);
+		ioctl(fd, USBTMC_IOCTL_MSG_IN_ATTR, &attr);
+	}
+	if (len >= 0) printf("teom_in succeeded\n");
+      }
+
     ttermc:
       { struct usbtmc_termchar termc;
 	int part=1;
