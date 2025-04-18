@@ -278,7 +278,7 @@ Example set timeout to 1000 milliseconds
 Allows user programs to send control messages to a device over the
 control pipe.
 
-### ioctl to control setting EOM bit
+### ioctl to control setting EOM bit on write
 
 Enables or disables setting the EOM bit on write.
 By default the EOM bit is set on the last transfer of a write.
@@ -295,10 +295,10 @@ Example
 
 ```
 
-### ioctl to configure TermChar and TermCharEnable
+### ioctl to configure term_char and termc_har_enable
 
 Allows enabling/disabling of terminating a read on reception of term_char.
-By default TermCharEnabled is false and TermChar is '\n' (0x0a).
+By default term_char_enable is false and term_char is '\n' (0x0a).
 
 Will return with error EINVAL if term_char_enabled is not 0 or 1 or if
 attempting to enable term_char when the device does not support terminating
@@ -315,6 +315,29 @@ Example
 
 ```
 
+### ioctl to obtain the termination condition of a read
+
+Each usbtmc read corresponds to one transfer which can consist
+of any number of transactions, thus any length transfer can be
+read with one read. 
+
+Some memory constrained devices might send a USBTMC message in multiple
+transfers. In order to determine whether the last transfer of a message
+has been read the USBTMC_IOCTL_MSG_IN_ATTR ioctl can be called after the
+read.
+
+It returns 0 on success and places the termination bits in the argument.
+
+Example
+
+```C
+	unsigned char attr;
+....
+	ioctl(fd, USBTMC_IOCTL_MSG_IN_ATTR,&attr);
+	//	if (!attr)     message unterminated
+	//	if (attr & 1)  message terminated with EOM
+	//	if (attr & 2)  message terminated on termchar
+```
 
 ## Issues and enhancement requests
 
