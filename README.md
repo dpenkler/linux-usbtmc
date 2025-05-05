@@ -307,7 +307,7 @@ a read when a byte matches the specified term_char.
 Example
 
 ```C
-	struct usbtmc_termc termc;
+	struct usbtmc_termchar termc;
 ....
 	termc.term_char_enabled = 1; // enable terminating reads on term_char
 	termc.term_char = '\n';     
