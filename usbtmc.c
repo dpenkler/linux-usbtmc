@@ -506,8 +506,9 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 	u8 *buffer;
 	u8 tag;
 	int rv;
-	long retval; /* need long here for wait_event_interruptible_timeout() */
-
+	long wait_rv;
+	unsigned long expire;
+	
 	dev_dbg(dev, "Enter ioctl_read_stb iin_ep_present: %d\n",
 		data->iin_ep_present);
 
@@ -536,17 +537,18 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 	}
 
 	if (data->iin_ep_present) {
-		retval = wait_event_interruptible_timeout(
+		expire = msecs_to_jiffies(file_data->timeout);
+		wait_rv = wait_event_interruptible_timeout(
 			data->waitq,
 			atomic_read(&data->iin_data_valid) != 0,
-			msecs_to_jiffies(file_data->timeout));
-		if (retval < 0) {
-			dev_dbg(dev, "wait interrupted\n");
-			rv = -EINTR;
+			expire);
+		if (wait_rv < 0) {
+			dev_dbg(dev, "wait interrupted %ld\n", wait_rv);
+			rv = wait_rv;
 			goto exit;
 		}
 
-		if (retval == 0) {
+		if (wait_rv == 0) {
 			dev_dbg(dev, "wait timed out\n");
 			rv = -ETIMEDOUT;
 			goto exit;
@@ -564,6 +566,8 @@ static int usbtmc_get_stb(struct usbtmc_file_data *file_data, __u8 *stb)
 	}
 
 	dev_dbg(dev, "stb:0x%02x received %d\n", (unsigned int)*stb, rv);
+
+	rv = 0;
 
  exit:
 	/* bump interrupt bTag */
@@ -630,7 +634,7 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 	struct device *dev = &data->intf->dev;
 	u32 timeout;
 	unsigned long expire;
-	long retval; /* remaining jiffies can be > INT_MAX */
+	long wait_rv;
 
 	if (!data->iin_ep_present) {
 		dev_dbg(dev, "no interrupt endpoint present\n");
@@ -644,7 +648,7 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 
 	mutex_unlock(&data->io_mutex);
 
-	retval = wait_event_interruptible_timeout(
+	wait_rv = wait_event_interruptible_timeout(
 		data->waitq,
 		atomic_read(&file_data->srq_asserted) != 0 ||
 		atomic_read(&file_data->closing),
@@ -653,17 +657,15 @@ static int usbtmc488_ioctl_wait_srq(struct usbtmc_file_data *file_data,
 	mutex_lock(&data->io_mutex);
 
 	/* Note! disconnect or close could be called in the meantime */
-	if (atomic_read(&file_data->closing) || data->zombie) {
-		pr_debug("%s - wait dev went away\n", __func__);
+	if (atomic_read(&file_data->closing) || data->zombie)
 		return -ENODEV;
+
+	if (wait_rv < 0) {
+		dev_dbg(dev, "%s - wait interrupted %ld\n", __func__, wait_rv);
+		return wait_rv;
 	}
 
-	if (retval < 0) {
-		dev_dbg(dev, "%s - wait interrupted\n", __func__);
-		return -EINTR;
-	}
-
-	if (retval == 0) {
+	if (wait_rv == 0) {
 		dev_dbg(dev, "%s - wait timed out\n", __func__);
 		return -ETIMEDOUT;
 	}
@@ -855,9 +857,9 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 	int retval = 0;
 	u32 max_transfer_size;
 	unsigned long expire;
-	long wretval;
 	int bufcount = 1;
 	int again = 0;
+	long wait_rv;
 
 	/* mutex already locked */
 
@@ -970,19 +972,21 @@ static ssize_t usbtmc_generic_read(struct usbtmc_file_data *file_data,
 		if (!(flags & USBTMC_FLAG_ASYNC)) {
 			dev_dbg(dev, "%s: before wait time %lu\n",
 				__func__, expire);
-			wretval = wait_event_interruptible_timeout(
+			wait_rv = wait_event_interruptible_timeout(
 				file_data->wait_bulk_in,
 				usbtmc_do_transfer(file_data),
 				expire);
 
 			dev_dbg(dev, "%s: wait returned %ld\n",
-				__func__, wretval);
+				__func__, wait_rv);
 
-			if (wretval <= 0) {
-				if (wretval == 0)
-					retval = -ETIMEDOUT;
-				else
-					retval = -EINTR;
+			if (wait_rv < 0) {
+				retval = wait_rv;
+				goto error;
+			}
+
+			if (wait_rv == 0) {
+				retval = -ETIMEDOUT;
 				goto error;
 			}
 		}
