@@ -277,6 +277,13 @@ static int testSTB() {
 		showReg(STB,tmp);
 	}
 	showReg(STB,tmp1);
+	/* Test USBTMC_IOCTL_GET_STB */
+	ioctl(fd, USBTMC_IOCTL_GET_STB, &tmp1);
+		if (tmp != tmp1) {
+		fprintf(stderr,
+			"Warning: ioctl read status byte = %x != ioctl getstatus byte = %x\n",
+			tmp,tmp1);
+	}
 
 	sscope(":MEAS:FREQ?;VRMS?;VPP? CHAN1;*OPC\n"); /* Start "Operation" */
 
