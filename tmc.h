@@ -52,7 +52,6 @@ struct usbtmc_request {
 struct usbtmc_ctrlrequest {
 	struct usbtmc_request req;
 	void __user *data; /* pointer to user space */
-	__u8 filler[0]  __attribute__ ((aligned (8)));
 } __attribute__ ((packed));
 
 struct usbtmc_termchar {
@@ -71,8 +70,7 @@ struct usbtmc_message {
 	__u32 transfer_size; /* size of bytes to transfer */
 	__u32 transferred; /* size of received/written bytes */
 	__u32 flags; /* bit 0: 0 = synchronous; 1 = asynchronous */
-	void __user *message   __attribute__ ((aligned (8)));
-	__u8 filler[0]  __attribute__ ((aligned (8)));
+	void __user *message; /* pointer to header and data in user space */
 } __attribute__ ((packed));
 
 /* Request values for USBTMC driver's ioctl entry point */
