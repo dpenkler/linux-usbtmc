@@ -24,7 +24,7 @@
 #include <limits.h>
 #include <time.h>
 //#include <linux/usb/tmc.h>
-#define __user
+#define USER
 #include "tmc.h"
 
 #define NUM_CAPS 9

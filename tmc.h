@@ -19,6 +19,10 @@
 
 #include <linux/types.h>   /* __u8 etc */
 
+#ifdef USER
+#define __user
+#endif
+
 /* USB TMC status values */
 #define USBTMC_STATUS_SUCCESS				0x01
 #define USBTMC_STATUS_PENDING				0x02
