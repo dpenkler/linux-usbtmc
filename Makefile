@@ -1,3 +1,7 @@
+ifneq ($(KERNELRELEASE),)
+# kbuild part of makefile
+obj-m  := usbtmc.o
+else
 # normal makefile
 KDIR ?= /lib/modules/`uname -r`/build
 default:
@@ -12,4 +16,4 @@ tmcterm: tmcterm.c
 clean:
 	$(MAKE) -C $(KDIR) M=$$PWD clean
 	rm -f ttmc screendump tmcterm
-
+endif
